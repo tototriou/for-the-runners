@@ -1,0 +1,58 @@
+name: Tests, banc et déploiement
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Types
+        run: npx tsc --noEmit
+      - name: Tests unitaires
+        run: npm test
+      - name: Banc de tests (échoue si un critère n'est pas atteint)
+        run: npm run bench
+      - name: Rapport du banc
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultats
+          path: |
+            RESULTATS.md
+            examples/
+      - name: Construction
+        run: npx vite build
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: dist
+
+  deployer:
+    if: github.ref == 'refs/heads/main'
+    needs: verifier
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - id: deploiement
+        uses: actions/deploy-pages@v4

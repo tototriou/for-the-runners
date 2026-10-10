@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#14532d" />
+    <title>Boucle D+</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="map" aria-label="Carte : touche un point pour choisir le départ"></div>
+      <aside id="panel">
+        <header>
+          <h1>Boucle D+</h1>
+          <p class="sub" id="zone-info">Chargement des données…</p>
+        </header>
+        <form id="form">
+          <p class="hint">Touche la carte pour placer le départ.</p>
+          <div class="row">
+            <label>Distance (km)
+              <input id="distance" type="number" inputmode="decimal" min="1" max="60" step="0.5" value="12" required />
+            </label>
+            <label>D+ (m)
+              <input id="dplus" type="number" inputmode="numeric" min="0" max="4000" step="10" value="400" required />
+            </label>
+          </div>
+          <label>Terrain
+            <select id="terrain">
+              <option value="mixte">Mixte</option>
+              <option value="sentiers">Sentiers</option>
+              <option value="route">Route</option>
+            </select>
+          </label>
+          <button id="go" type="submit" disabled>Générer les boucles</button>
+        </form>
+        <p id="status" role="status"></p>
+        <ol id="results"></ol>
+        <section id="profile-box" hidden>
+          <h2>Profil</h2>
+          <svg id="profile" viewBox="0 0 320 120" preserveAspectRatio="none" role="img" aria-label="Profil altimétrique"></svg>
+          <p class="sub" id="profile-legend"></p>
+        </section>
+        <footer class="sub" id="credits"></footer>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
