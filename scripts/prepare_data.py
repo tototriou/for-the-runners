@@ -56,7 +56,9 @@ SOUS_CLASSES_EXCLUES = {"driveway", "parking_aisle"}
 SAUT_MAX_M = 1000.0
 
 PAS_ECHANTILLON_M = 30.0
-TOLERANCE_SIMPLIF_M = 4.0
+# 1 m : au-delà, les lacets des sentiers étaient coupés à l'écran et dans
+# le GPX (la montre mesurait jusqu'à 35 % de moins sur un tronçon en zigzag).
+TOLERANCE_SIMPLIF_M = 1.0
 R_TERRE = 6371008.8
 
 
