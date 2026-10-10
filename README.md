@@ -5,6 +5,8 @@ et un **dénivelé positif** choisis, sur de vraies données cartographiques.
 Site statique : tout le calcul se fait dans le navigateur (Web Worker), sans
 backend ni clé d'API.
 
+**En ligne : https://tototriou.github.io/for-the-runners/**
+
 Zone du POC : 15 km autour d'Annecy. Résultats du banc de tests :
 [RESULTATS.md](RESULTATS.md). Limites et suites : [NOTE.md](NOTE.md).
 
