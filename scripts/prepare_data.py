@@ -47,6 +47,13 @@ CLASSES_ROUTE = {
 CLASSES_SENTIER = {"path", "track", "footway", "steps", "bridleway"}
 # Un trottoir ou un passage piéton reste urbain : classé route.
 SOUS_CLASSES_URBAINES = {"sidewalk", "crosswalk"}
+# Allées privées et de parking : réelles, mais le routage s'en servait de
+# raccourcis entre deux rues, à travers des propriétés et des parkings.
+SOUS_CLASSES_EXCLUES = {"driveway", "parking_aisle"}
+# Un sentier qui saute de plus d'un kilomètre d'un seul trait est une erreur
+# de saisie (ex. un footway de 1,5 km en ligne droite à travers Annecy). Les
+# vrais chemins rectilignes relevés dans la zone ne dépassent pas 600 m.
+SAUT_MAX_M = 1000.0
 
 PAS_ECHANTILLON_M = 30.0
 TOLERANCE_SIMPLIF_M = 4.0
@@ -230,6 +237,21 @@ def interdit_aux_pietons(access):
     return False
 
 
+def prive(access):
+    """Accès réservé (access=private d'OSM, rendu « allowed as_private » par Overture)."""
+    for r in access or []:
+        when = r.get("when") or {}
+        modes = when.get("mode") or []
+        if "as_private" in (when.get("recognized") or []) and (not modes or "foot" in modes):
+            return True
+    return False
+
+
+def saut_aberrant(coords):
+    """Un pas droit de plus de SAUT_MAX_M entre deux sommets : erreur de saisie."""
+    return any(haversine(*coords[i], *coords[i + 1]) > SAUT_MAX_M for i in range(len(coords) - 1))
+
+
 def type_arete(cls, sous_classe):
     if cls in CLASSES_SENTIER and sous_classe not in SOUS_CLASSES_URBAINES:
         return 1  # sentier
@@ -376,6 +398,15 @@ def construire_aretes(segments, centre, rayon_km):
             continue
         if interdit_aux_pietons(s["access"]):
             ignores["interdit"] += 1
+            continue
+        if prive(s["access"]):
+            ignores["privé"] += 1
+            continue
+        if s["subclass"] in SOUS_CLASSES_EXCLUES:
+            ignores[s["subclass"]] += 1
+            continue
+        if cls in CLASSES_SENTIER | {"cycleway", "pedestrian"} and saut_aberrant(s["coords"]):
+            ignores["saut aberrant"] += 1
             continue
         conns = sorted(s["connectors"], key=lambda c: c[1])
         if len(conns) < 2:

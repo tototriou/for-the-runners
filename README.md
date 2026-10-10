@@ -47,9 +47,11 @@ Le script :
 1. lit les segments de voirie **Overture Maps** (couche transportation, issue
    d'OpenStreetMap, licence ODbL) directement sur S3, par requêtes HTTP
    partielles : seuls les blocs qui recoupent la zone sont téléchargés ;
-2. garde les voies praticables à pied (ni autoroute, ni voie rapide, ni
-   interdiction piétonne), coupe aux intersections, garde la plus grande
-   composante connexe et fusionne les nœuds de degré 2 ;
+2. garde les voies praticables à pied : ni autoroute, ni voie rapide, ni
+   interdiction piétonne, ni accès privé, ni allée privée ou de parking, ni
+   sentier aberrant (saut de plus de 1 km d'un seul trait, erreur de
+   saisie) ; coupe aux intersections, garde la plus grande composante
+   connexe et fusionne les nœuds de degré 2 ;
 3. prend l'altitude au **service altimétrique IGN** de la Géoplateforme (par
    lots, avec cache) ; s'il est injoignable, se replie sur le **SRTM 1"**
    (tuiles AWS), lissé par un flou gaussien pour retirer le bruit qui gonfle
