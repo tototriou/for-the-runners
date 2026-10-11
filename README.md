@@ -18,7 +18,11 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 3. « Générer les boucles » : 3 à 5 boucles, avec leurs écarts à la cible, le
    tracé et le profil. Le bouton GPX télécharge la boucle pour une montre.
 
-Tolérance visée : ±5 % sur la distance, ±15 % sur le D+.
+Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Si aucune boucle
+ne la respecte depuis le point choisi, l'app essaie un départ à moins de
+2 km et l'affiche en orange, relié au point demandé.
+
+Un lien peut fixer le départ : `…/for-the-runners/?depart=45.942,6.115`.
 
 ## Lancer en local
 
