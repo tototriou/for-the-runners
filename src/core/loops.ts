@@ -109,6 +109,10 @@ const BUDGET_ELARGISSEMENT = 6_000_000;
 const POIDS_HEURISTIQUE_MIN = 1;
 const MODES: (-1 | 0 | 1)[] = [-1, 0, 0, 1, 1];
 const PENALITE_REUSE = 3;
+// Un demi-tour (on part sur une voie et on revient par la même) n'est
+// accepté que si l'aller fait au moins cette longueur : vers un sommet, oui ;
+// au bout d'une rue, non.
+export const DEMI_TOUR_MIN_M = 1000;
 const DETOUR = 1.3;
 const BETAS = [-2, -0.8, 0, 0.8, 1.8, 3];
 const ANGLE_OR = Math.PI * (3 - Math.sqrt(5));
@@ -217,6 +221,10 @@ export class LoopGenerator {
     }
     for (const e of edges) used[e] = 0;
     if (!ok || edges.length === 0) return null;
+    // Pas d'aller-retour court dans une impasse : coupé, la distance est
+    // ensuite réajustée par le rayon.
+    couperDemiTours(g, edges, dirs, DEMI_TOUR_MIN_M);
+    if (edges.length === 0) return null;
 
     const m = mesurer(g, edges, dirs);
     return { p, edges, dirs, ...m, score: score(m, target) };
@@ -438,6 +446,38 @@ function now() {
 
 function pct(x: number) {
   return `${x >= 0 ? '+' : ''}${(x * 100).toFixed(0)} %`;
+}
+
+/**
+ * Demi-tours de la boucle : positions t où l'arête t reprend l'arête t-1 en
+ * sens inverse ; l'aller s'étend tant que la boucle repasse en miroir.
+ * Renvoie [début de l'aller, fin du retour (exclue), longueur de l'aller].
+ * Le raccord début/fin de boucle (départ au fond d'une impasse) n'est pas
+ * un demi-tour : il faut bien en sortir.
+ */
+export function demiTours(len: Float64Array, edges: number[]): [number, number, number][] {
+  const out: [number, number, number][] = [];
+  for (let t = 1; t < edges.length; t++) {
+    if (edges[t] !== edges[t - 1]) continue;
+    let j = 1;
+    while (t - 1 - j >= 0 && t + j < edges.length && edges[t - 1 - j] === edges[t + j]) j++;
+    let aller = 0;
+    for (let k = t - j; k < t; k++) aller += len[edges[k]];
+    out.push([t - j, t + j, aller]);
+  }
+  return out;
+}
+
+/** Retire en place les demi-tours dont l'aller est plus court que `minM`. */
+export function couperDemiTours(g: Graph, edges: number[], dirs: number[], minM: number) {
+  // Une coupe peut en révéler une autre (impasse dans une impasse) : on
+  // recommence jusqu'à ce qu'il n'y en ait plus.
+  for (;;) {
+    const court = demiTours(g.len, edges).find(([, , aller]) => aller < minM);
+    if (!court) return;
+    edges.splice(court[0], court[1] - court[0]);
+    dirs.splice(court[0], court[1] - court[0]);
+  }
 }
 
 function dansTolerance(c: { distanceM: number; dplusM: number }, t: { d: number; h: number }) {

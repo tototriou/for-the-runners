@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
-import { LoopGenerator, type Loop } from '../src/core/loops';
+import { couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
 import { chargerStore } from '../bench/load';
 
@@ -161,6 +161,46 @@ describe('LoopGenerator (grille synthétique)', () => {
     const a = gen.generate({ ...depart, distanceKm: 3, dplusM: 80, terrain: 'route', seed: 7 });
     const b = gen.generate({ ...depart, distanceKm: 3, dplusM: 80, terrain: 'route', seed: 7 });
     expect(a.loops.map((l) => l.edges)).toEqual(b.loops.map((l) => l.edges));
+  });
+});
+
+describe('demi-tours', () => {
+  // Arêtes 0..9, longueurs en mètres.
+  const len = Float64Array.from([100, 100, 300, 400, 100, 100, 100, 100, 100, 100]);
+  const g = { len } as unknown as Graph;
+
+  it('repère un aller-retour au bout d\u2019une rue et sa longueur', () => {
+    // 0, 1, puis impasse 2-3 aller-retour, puis 4.
+    expect(demiTours(len, [0, 1, 2, 3, 3, 2, 4])).toEqual([[2, 6, 700]]);
+  });
+
+  it('coupe un demi-tour de moins de 1 km, garde la boucle continue', () => {
+    const edges = [0, 1, 2, 3, 3, 2, 4];
+    const dirs = [1, 1, 1, 1, 0, 0, 1];
+    couperDemiTours(g, edges, dirs, DEMI_TOUR_MIN_M);
+    expect(edges).toEqual([0, 1, 4]);
+    expect(dirs).toEqual([1, 1, 1]);
+  });
+
+  it('garde un aller-retour d\u2019au moins 1 km (vers un sommet)', () => {
+    const edges = [0, 2, 3, 2, 3, 3, 2, 3, 2, 1];
+    // aller 2,3,2,3 = 1 400 m puis retour en miroir
+    couperDemiTours(g, edges, edges.map(() => 1), DEMI_TOUR_MIN_M);
+    expect(edges).toEqual([0, 2, 3, 2, 3, 3, 2, 3, 2, 1]);
+  });
+
+  it('coupe aussi une impasse dans l\u2019impasse', () => {
+    const edges = [0, 2, 4, 4, 2, 1];
+    couperDemiTours(g, edges, edges.map(() => 1), DEMI_TOUR_MIN_M);
+    expect(edges).toEqual([0, 1]);
+  });
+
+  it('les boucles générées n\u2019ont aucun demi-tour de moins de 1 km', () => {
+    const gr = grille();
+    const r = new LoopGenerator(gr).generate({ lat: 45.9, lon: 6.13, distanceKm: 4, dplusM: 150, terrain: 'mixte' });
+    for (const l of r.loops) {
+      expect(demiTours(gr.len, l.edges).filter(([, , aller]) => aller < DEMI_TOUR_MIN_M)).toEqual([]);
+    }
   });
 });
 
