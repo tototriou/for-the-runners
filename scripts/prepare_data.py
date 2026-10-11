@@ -61,6 +61,11 @@ SOUS_CLASSES_URBAINES = {"sidewalk", "crosswalk"}
 # Allées privées et de parking : réelles, mais le routage s'en servait de
 # raccourcis entre deux rues, à travers des propriétés et des parkings.
 SOUS_CLASSES_EXCLUES = {"driveway", "parking_aisle"}
+# Trottoirs et passages piétons cartographiés à part doublent le réseau des
+# villes (Paris : des centaines de milliers de nœuds) sans rien ouvrir au
+# coureur, qui court sur la rue elle-même, déjà dans le graphe. Ils rendaient
+# le calcul trop lent (jusqu'à 20 s) en plein Paris.
+SOUS_CLASSES_EXCLUES |= {"sidewalk", "crosswalk"}
 # Un sentier qui saute de plus d'un kilomètre d'un seul trait est une erreur
 # de saisie (ex. un footway de 1,5 km en ligne droite à travers Annecy). Les
 # vrais chemins rectilignes relevés autour d'Annecy ne dépassent pas 600 m.
@@ -199,8 +204,6 @@ def raison_exclusion(cls, sous_classe, access, coords):
         return "interdit"
     if prive(access):
         return "privé"
-    if sous_classe in SOUS_CLASSES_EXCLUES:
-        return sous_classe
     if cls in CLASSES_SENTIER | {"cycleway", "pedestrian"} and saut_aberrant(coords):
         return "saut aberrant"
     return None
@@ -233,13 +236,15 @@ def charger_aretes_brutes(region, release):
     """Arêtes de connecteur à connecteur de la région, filtres piétons appliqués.
 
     Traite les fichiers Overture un par un sans garder les segments bruts :
-    la mémoire ne contient que les arêtes retenues. Résultat mis en cache.
+    la mémoire ne contient que les arêtes retenues. Résultat mis en cache,
+    sous-classe comprise : filtrer_sous_classes s'applique après le cache,
+    pour qu'en changer ne demande pas de tout retélécharger.
     """
     import fsspec
     import pyarrow.parquet as pq
 
     bbox = region["bbox"]
-    cle = CACHE / f"aretes-{region['id']}-{release}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
+    cle = CACHE / f"aretes2-{region['id']}-{release}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
     if cle.exists():
         print(f"[overture] cache : {cle.name}")
         with gzip.open(cle, "rb") as f:
@@ -298,7 +303,7 @@ def charger_aretes_brutes(region, release):
                     continue
                 if not dans_boite(*morceau[0], bbox):
                     ca, cb, morceau = cb, ca, morceau[::-1]
-                aretes.append([ca, cb, morceau, t])
+                aretes.append([ca, cb, morceau, t, row["subclass"]])
         print(f"[overture] {region['id']} {k + 1}/{len(fichiers)} : {len(groupes)} groupe(s), "
               f"{len(aretes)} arêtes ({time.time() - t0:.0f} s)", flush=True)
     print(f"[overture] exclus : {dict(exclus)}")
@@ -309,6 +314,13 @@ def charger_aretes_brutes(region, release):
 
 
 # ------------------------------------------------------------------ 2. graphe
+
+def filtrer_sous_classes(aretes):
+    garde = [[a, b, c, t] for a, b, c, t, sc in aretes if sc not in SOUS_CLASSES_EXCLUES]
+    print(f"[graphe] sous-classes exclues ({', '.join(sorted(SOUS_CLASSES_EXCLUES))}) : "
+          f"{len(aretes) - len(garde)} arêtes retirées, {len(garde)} gardées")
+    return garde
+
 
 def garder_grandes_composantes(aretes):
     parent = {}
@@ -648,6 +660,7 @@ def main():
         if region["id"] not in choisies:
             continue
         aretes = charger_aretes_brutes(region, release)
+        aretes = filtrer_sous_classes(aretes)
         aretes = garder_grandes_composantes(aretes)
         aretes = fusionner_degre_2(aretes)
         anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release)
