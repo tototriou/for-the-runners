@@ -7,7 +7,22 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { SEUIL_ALLER_RETOUR, type LoopResponse } from '../src/core/loops';
+import { DEMI_TOUR_MIN_M, demiTours, SEUIL_ALLER_RETOUR, type LoopResponse } from '../src/core/loops';
+import { CLASSES, CLS_INCONNUE, type Graph } from '../src/core/graph';
+
+/** Familles de voies pour mesurer la composition des boucles. */
+const FAMILLES: [string, readonly string[]][] = [
+  ['Grandes routes (primary, secondary)', ['primary', 'secondary']],
+  ['Routes tertiaires', ['tertiary']],
+  ['Rues et dessertes', ['residential', 'living_street', 'unclassified', 'service', 'unknown']],
+  ['Pistes cyclables', ['cycleway']],
+  ['Voies piétonnes et sentiers', ['pedestrian', 'path', 'track', 'footway', 'steps', 'bridleway']],
+];
+function famille(cls: number): number {
+  if (cls === CLS_INCONNUE) return -1;
+  const nom = CLASSES[cls];
+  return FAMILLES.findIndex(([, l]) => l.includes(nom));
+}
 import { toGpx } from '../src/core/gpx';
 import { CAS_IMPOSSIBLES, casDeTest, casRegionaux, type Cas } from './cases';
 import { chargerStore, Generateur } from './load';
@@ -28,6 +43,8 @@ const gen = new Generateur(chargerStore());
 interface Critere { nom: string; seuil: string; valeur: string; ok: boolean }
 interface ResultatJeu {
   id: string; titre: string; description: string; criteres: Critere[]; echecs: string[];
+  /** Part moyenne de distance par famille de voie, et boucles avec ≥ 1 km de grande route. */
+  composition: number[]; grandesRoutes1km: number; nbBoucles: number;
   lignes: string[]; reponses: { c: Cas; r: LoopResponse }[]; msChargementMax: number;
 }
 
@@ -49,6 +66,10 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   let reussis = 0;
   let exacts = 0;
   let suggerees = 0;
+  let nbBoucles = 0;
+  let demiToursCourts = 0;
+  let grandesRoutes1km = 0;
+  const composition = new Array(FAMILLES.length).fill(0);
   let suggereesOk = 0;
   let msChargementMax = 0;
   process.stdout.write(`${titre} : `);
@@ -61,6 +82,20 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
     if (ok) reussis++;
     if (ok && !r.depart) exacts++;
     for (const l of r.loops) allersRetours.push(l.allerRetour);
+    const g = (r as { graph: Graph | null }).graph;
+    if (g) {
+      for (const l of r.loops) {
+        nbBoucles++;
+        demiToursCourts += demiTours(g.len, l.edges).filter(([, , aller]) => aller < DEMI_TOUR_MIN_M).length;
+        const parFamille = new Array(FAMILLES.length).fill(0);
+        for (const e of l.edges) {
+          const f = famille(g.cls[e]);
+          if (f >= 0) parFamille[f] += g.len[e];
+        }
+        parFamille.forEach((v, k) => (composition[k] += v / l.distanceM));
+        if (parFamille[0] >= 1000) grandesRoutes1km++;
+      }
+    }
     const b = r.loops[0];
     const cell = b
       ? `${(b.distanceM / 1000).toFixed(2)} km / ${Math.round(b.dplusM)} m | ${pct(b.ecartDistance)} | ${pct(b.ecartDplus)} | ${(b.allerRetour * 100).toFixed(0)} %`
@@ -112,12 +147,20 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
       valeur: `${suggereesOk}/${suggerees} (${cas.length - reussis - suggerees} sans suggestion)`,
       ok: true,
     },
+    {
+      nom: 'Demi-tours de moins de 1 km dans les boucles proposées',
+      seuil: '0',
+      valeur: `${demiToursCourts} sur ${nbBoucles} boucles`,
+      ok: demiToursCourts === 0,
+    },
     { nom: 'Temps de calcul (Node, max)', seuil: '< 10 s (viser < 3 s)', valeur: `max ${(tMax / 1000).toFixed(2)} s, moyenne ${(tMoy / 1000).toFixed(2)} s, p90 ${(tP90 / 1000).toFixed(2)} s`, ok: tMax < SEUIL_TEMPS_MS },
     { nom: 'Tronçons empruntés deux fois (moyenne des boucles proposées)', seuil: '< 15 %', valeur: `${(arMoy * 100).toFixed(1)} % (${arAuDela}/${allersRetours.length} boucles ≥ 15 %)`, ok: arMoy < SEUIL_ALLER_RETOUR },
   ];
   for (const k of criteres) console.log(`  ${k.ok ? 'OK ' : 'KO '} ${k.nom} : ${k.valeur} (seuil ${k.seuil})`);
   if (tMoy > CIBLE_TEMPS_MS) console.log(`  Note : temps moyen au-dessus de la cible de ${CIBLE_TEMPS_MS / 1000} s.`);
-  return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax };
+  const compo = composition.map((v) => v / Math.max(1, nbBoucles));
+  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
+  return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax, composition: compo, grandesRoutes1km, nbBoucles };
 }
 
 // ------------------------------------------------------------------- jeux
@@ -195,6 +238,14 @@ ${j.description} Chargement et fusion des tuiles : ${(j.msChargementMax / 1000).
 | Critère | Seuil | Mesure | |
 | --- | --- | --- | --- |
 ${j.criteres.map((c) => `| ${c.nom} | ${c.seuil} | ${c.valeur} | ${c.ok ? '✅' : '❌'} |`).join('\n')}
+
+Composition des boucles proposées (part moyenne de la distance) :
+
+| Voies | Part |
+| --- | --- |
+${FAMILLES.map(([n], k) => `| ${n} | ${(j.composition[k] * 100).toFixed(1)} % |`).join('\n')}
+
+Boucles avec au moins 1 km de grande route : ${j.grandesRoutes1km} sur ${j.nbBoucles}.
 
 <details><summary>Cas en échec (${j.echecs.length}) et détail des demandes</summary>
 
