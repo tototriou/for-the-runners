@@ -2,7 +2,7 @@
 // choix des tuiles utiles à une demande, chargement avec cache, fusion en
 // un seul graphe.
 
-import { decodeGraph, type Graph, type ZoneDoc } from './graph';
+import { CLS_INCONNUE, decodeGraph, type Graph, type ZoneDoc } from './graph';
 
 export interface RegionMeta {
   id: string;
@@ -77,7 +77,7 @@ export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
   const index = new Map<number, number>();
   const nodes: number[] = [];
   const nodeEle: number[] = [];
-  const edges: ZoneDoc['edges'] = { a: [], b: [], len: [], upAB: [], upBA: [], type: [] };
+  const edges: Required<ZoneDoc['edges']> = { a: [], b: [], len: [], upAB: [], upBA: [], type: [], cls: [] };
   const geom: number[][] = [];
   let prevLa = 0;
   let prevLo = 0;
@@ -108,6 +108,7 @@ export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
       edges.upAB.push(E.upAB[e]);
       edges.upBA.push(E.upBA[e]);
       edges.type.push(E.type[e]);
+      edges.cls.push(E.cls?.[e] ?? CLS_INCONNUE);
       geom.push(t.geom[e]);
     }
   }

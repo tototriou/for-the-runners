@@ -3,6 +3,17 @@
 
 export type Terrain = 'mixte' | 'sentiers' | 'route';
 
+/**
+ * Classes Overture des tronçons, dans l'ordre du code « cls » des tuiles.
+ * Partagée avec scripts/prepare_data.py (CLASSES) : à changer des deux côtés.
+ */
+export const CLASSES = [
+  'primary', 'secondary', 'tertiary', 'residential', 'living_street', 'unclassified',
+  'service', 'pedestrian', 'cycleway', 'unknown', 'path', 'track', 'footway', 'steps', 'bridleway',
+] as const;
+/** Code de classe absent (données antérieures au champ « cls »). */
+export const CLS_INCONNUE = 255;
+
 export const TYPE_ROUTE = 0;
 export const TYPE_SENTIER = 1;
 
@@ -19,7 +30,7 @@ export interface ZoneDoc {
   };
   nodes: number[];
   nodeEle: number[];
-  edges: { a: number[]; b: number[]; len: number[]; upAB: number[]; upBA: number[]; type: number[] };
+  edges: { a: number[]; b: number[]; len: number[]; upAB: number[]; upBA: number[]; type: number[]; cls?: number[] };
   geom: number[][];
 }
 
@@ -40,6 +51,8 @@ export interface Graph {
   upAB: Float64Array;
   upBA: Float64Array;
   type: Uint8Array;
+  /** Classe Overture (indice dans CLASSES, CLS_INCONNUE si absente). */
+  cls: Uint8Array;
   /** Points intérieurs de l'arête e (sens a → b) : geomOff[e]..geomOff[e+1]. */
   geomOff: Int32Array;
   geomLat: Float64Array;
@@ -87,6 +100,7 @@ export function decodeGraph(doc: ZoneDoc): Graph {
   const upAB = Float64Array.from(E.upAB, (v) => v / 10);
   const upBA = Float64Array.from(E.upBA, (v) => v / 10);
   const type = Uint8Array.from(E.type);
+  const cls = E.cls ? Uint8Array.from(E.cls) : new Uint8Array(m).fill(CLS_INCONNUE);
 
   const geomOff = new Int32Array(m + 1);
   for (let e = 0; e < m; e++) geomOff[e + 1] = geomOff[e] + doc.geom[e].length / 3;
@@ -130,7 +144,7 @@ export function decodeGraph(doc: ZoneDoc): Graph {
   }
 
   const g: Graph = {
-    meta: doc.meta, n, m, lat, lon, ele, x, y, a, b, len, upAB, upBA, type,
+    meta: doc.meta, n, m, lat, lon, ele, x, y, a, b, len, upAB, upBA, type, cls,
     geomOff, geomLat, geomLon, geomEle, adjStart, adjEdge, adjTo, adjFwd,
     grid: undefined as unknown as SpatialGrid,
   };
