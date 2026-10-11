@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
 import { couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
-import { DplusMaxGenerator } from '../src/core/dplusmax';
+import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
 
 /**
@@ -207,7 +207,7 @@ describe('demi-tours', () => {
 
 describe('D+ maximal (grille synthétique)', () => {
   const g = grille();
-  const gen = new DplusMaxGenerator(g);
+  const gen = new ZoneGenerator(g);
   const depart = { lat: 45.9, lon: 6.13 };
 
   it('reste dans le cercle, tient la distance, sans demi-tour court', () => {
@@ -230,6 +230,17 @@ describe('D+ maximal (grille synthétique)', () => {
     const max = gen.generate({ ...depart, distanceKm: 5, terrain: 'mixte', zone: { kind: 'cercle', rayonM: 1500 } });
     const normal = new LoopGenerator(g).generate({ ...depart, distanceKm: 5, dplusM: 150, terrain: 'mixte' });
     expect(max.loops[0].dplusM).toBeGreaterThan(Math.max(...normal.loops.map((l) => l.dplusM)));
+  });
+
+  it('D+ visé dans une zone : tolérance tenue, boucle entièrement dans la zone', () => {
+    const r = gen.generate({ ...depart, distanceKm: 5, dplusM: 120, terrain: 'mixte', zone: { kind: 'cercle', rayonM: 1500 } });
+    expect(r.ok).toBe(true);
+    const ok = r.loops.filter((l) => l.dansTolerance);
+    expect(ok.length).toBeGreaterThan(0);
+    for (const l of ok) {
+      expect(Math.abs(l.ecartDplus)).toBeLessThanOrEqual(0.15);
+      expect(l.partZone).toBe(1);
+    }
   });
 
   it('accepte un départ sur la bordure d\u2019une zone dessinée', () => {
