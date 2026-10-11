@@ -41,6 +41,8 @@ export interface Loop {
   ecartDplus: number;
   /** Part de la longueur parcourue sur des arêtes empruntées plus d'une fois. */
   allerRetour: number;
+  /** Part de la distance dans la zone choisie (boucles en zone seulement). */
+  partZone?: number;
   /** Distance sur grande route (principale, départementale), en mètres. */
   grandesRoutesM: number;
   score: number;

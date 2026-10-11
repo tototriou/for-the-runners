@@ -1,6 +1,8 @@
-// Mode « D+ maximal » : à distance donnée, la boucle la plus dénivelée
-// possible, sans sortir d'une zone (cercle autour du départ ou polygone
-// dessiné).
+// Boucles dans une zone (cercle autour du départ ou polygone dessiné) : la
+// boucle reste le plus possible dans la zone (elle n'en sort que pour y
+// entrer depuis un départ extérieur), avec deux objectifs :
+//  - D+ visé : la pente de chaque point est choisie pour viser le D+ restant ;
+//  - D+ maximal : la boucle la plus dénivelée à distance donnée.
 //
 // Chaque candidate enchaîne des points hauts et des points bas de la zone :
 // monter à un sommet, redescendre dans un creux, remonter ailleurs. La
@@ -12,7 +14,7 @@
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
 import {
   BUDGET_TRAVAIL, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
-  POIDS_HEURISTIQUE_MIN, rng, TOL_DISTANCE, type Loop, type LoopResponse,
+  POIDS_HEURISTIQUE_MIN, rng, SEUIL_ALLER_RETOUR, TOL_DISTANCE, TOL_DPLUS, type Loop, type LoopResponse,
 } from './loops';
 import { Router } from './router';
 
@@ -20,13 +22,15 @@ export type Zone =
   | { kind: 'cercle'; rayonM: number }
   | { kind: 'polygone'; points: [number, number][] };
 
-export interface DplusMaxRequest {
+export interface ZoneRequest {
   lat: number;
   lon: number;
   distanceKm: number;
   terrain: Terrain;
   /** Absente : cercle d'un quart de la distance autour du départ. */
   zone?: Zone | null;
+  /** D+ visé ; absent : D+ maximal. */
+  dplusM?: number;
   /** Répéter la même côte (aller-retour) est permis. */
   allersRetours?: boolean;
   seed?: number;
@@ -36,6 +40,7 @@ export interface DplusMaxRequest {
 // pour moins de 0,6 s ; le budget de travail borne les zones denses.
 const N_CANDIDATS = 400;
 const BETAS = [1.5, 3];
+const BETAS_CIBLE = [-1.5, 0, 1.5, 3];
 // Points hauts et bas : les nœuds de la zone dans les premiers et derniers
 // POOL_PART de l'altitude (au moins POOL_MIN).
 const POOL_PART = 0.08;
@@ -119,7 +124,7 @@ interface Cand {
   score: number;
 }
 
-export class DplusMaxGenerator {
+export class ZoneGenerator {
   private router: Router;
   private used: Uint16Array;
   travail = 0;
@@ -129,7 +134,7 @@ export class DplusMaxGenerator {
     this.used = new Uint16Array(g.m);
   }
 
-  generate(req: DplusMaxRequest): LoopResponse {
+  generate(req: ZoneRequest): LoopResponse {
     const t0 = performance.now();
     const g = this.g;
     this.travail = 0;
@@ -150,7 +155,9 @@ export class DplusMaxGenerator {
 
     // Coûts : relief attiré, arêtes hors zone interdites (ou chères pour
     // l'accès si le départ est dehors).
-    const couts = BETAS.map((beta) => {
+    // D+ visé : du relief évité au relief attiré, selon la pente demandée.
+    const cible = req.dplusM != null ? Math.max(req.dplusM, 1) : null;
+    const couts = (cible == null ? BETAS : BETAS_CIBLE).map((beta) => {
       const { cost, minFactor } = coutsAretes(g, beta, req.terrain);
       const proche = (n: number) => (g.x[n] - g.x[start]) ** 2 + (g.y[n] - g.y[start]) ** 2 <= ACCES_M ** 2;
       for (let e = 0; e < g.m; e++) {
@@ -195,6 +202,7 @@ export class DplusMaxGenerator {
       const edges: number[] = [];
       const dirs: number[] = [];
       let cum = 0;
+      let dplus = 0;
       // Détour réel (chemin ÷ vol d'oiseau) mesuré sur les tronçons déjà
       // tracés : en ville, le 1,3 par défaut faisait dépasser la distance.
       let volOiseau = 0;
@@ -213,6 +221,7 @@ export class DplusMaxGenerator {
           dirs.push(g.a[e] === r.nodes[j] ? 1 : 0);
           this.used[e]++;
           cum += g.len[e];
+          dplus += g.a[e] === r.nodes[j] ? g.upAB[e] : g.upBA[e];
         }
         cur = cible;
         return true;
@@ -242,8 +251,13 @@ export class DplusMaxGenerator {
           if (best >= 0 && reste > retour * 1.1) aller(best);
           break;
         }
-        const cible = choisirPente(possibles, cur, versHaut, g, dist, rand);
-        if (!aller(cible)) break;
+        // D+ visé : la montée suivante vise la pente qu'il reste à faire
+        // (la moitié du chemin monte, l'autre descend).
+        const penteVisee = cible == null ? null : (2 * Math.max(0, cible - dplus)) / Math.max(reste, 1);
+        const prochain = penteVisee == null
+          ? choisirPente(possibles, cur, versHaut, g, dist, rand)
+          : choisirPenteVisee(possibles, cur, versHaut, penteVisee, g, dist, rand);
+        if (!aller(prochain)) break;
         versHaut = !versHaut;
       }
       const okRetour = cur === start || aller(start);
@@ -253,14 +267,18 @@ export class DplusMaxGenerator {
       if (edges.length === 0) continue;
       const m = mesurer(g, edges, dirs);
       const ecart = Math.abs(m.distanceM - D) / D;
-      // Dans la tolérance de distance : le plus de D+, ramené à la distance
-      // demandée (sinon les +5 % de distance gagneraient toujours) ; hors
-      // tolérance, la plus proche.
-      const score = ecart <= TOL_DISTANCE ? -m.dplusM * (D / m.distanceM) : 1e6 + ecart * 1e6;
+      // D+ maximal : dans la tolérance de distance, le plus de D+, ramené à
+      // la distance demandée (sinon les +5 % gagneraient toujours) ; hors
+      // tolérance, la plus proche. D+ visé : le score du mode normal.
+      const score = cible != null
+        ? scoreCible(m, { d: D, h: cible })
+        : ecart <= TOL_DISTANCE ? -m.dplusM * (D / m.distanceM) : 1e6 + ecart * 1e6;
       cands.push({ edges, dirs, ...m, score });
     }
 
-    cands.sort((a, b) => a.score - b.score);
+    const dansTol = (c: { distanceM: number; dplusM: number }) =>
+      Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
+    cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || a.score - b.score);
     const choisies: { c: Cand; set: Set<number> }[] = [];
     for (const c of cands) {
       const set = new Set(c.edges);
@@ -271,31 +289,66 @@ export class DplusMaxGenerator {
     if (choisies.length === 0) return { ...vide('Aucune boucle n’a pu être tracée dans cette zone.'), stats, startNode: start };
 
     const loops: Loop[] = choisies.map(({ c }) => {
-      const l = finaliser(g, c, { d: D, h: Math.max(1, c.dplusM) });
-      l.dansTolerance = Math.abs(l.ecartDistance) <= TOL_DISTANCE;
+      const l = finaliser(g, c, { d: D, h: cible ?? Math.max(1, c.dplusM) });
+      l.dansTolerance = dansTol(c);
+      let dansZone = 0;
+      for (const e of c.edges) if (dedans[g.a[e]] && dedans[g.b[e]]) dansZone += g.len[e];
+      l.partZone = dansZone / c.distanceM;
       return l;
     });
     const nOk = loops.filter((l) => l.dansTolerance).length;
     const zoneTxt = req.zone == null
       ? `à moins de ${(zone.kind === 'cercle' ? zone.rayonM / 1000 : 0).toFixed(1).replace('.', ',')} km du départ`
       : zone.kind === 'cercle' ? `à moins de ${(zone.rayonM / 1000).toFixed(1).replace('.', ',')} km du départ` : 'dans la zone dessinée';
+    const zonePct = `${Math.round(loops[0].partZone! * 100)} % dans la zone`;
     if (nOk === 0) {
       return {
         ok: false, loops, startNode: start, stats,
-        message: `Aucune boucle de ${req.distanceKm} km (±5 %) n’a été trouvée ${zoneTxt}. ` +
-          `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km. ` +
+        message: `Aucune boucle de ${req.distanceKm} km (±5 %)${cible != null ? ` et ${cible} m D+ (±15 %)` : ''} n’a été trouvée ${zoneTxt}. ` +
+          `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km${cible != null ? ` et ${Math.round(loops[0].dplusM)} m D+` : ''}. ` +
           (departDedans
             ? 'Agrandis la zone ou change la distance.'
             : 'Le départ est hors de la zone : l’accès compte dans la distance. Rapproche le départ, agrandis la zone ou change la distance.'),
       };
     }
     const b = loops[0];
+    if (cible != null) {
+      return {
+        ok: true, loops, startNode: start, stats,
+        message: `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
+      };
+    }
     return {
       ok: true, loops, startNode: start, stats,
       message: `D+ maximal ${zoneTxt} : ${Math.round(b.dplusM)} m sur ${(b.distanceM / 1000).toFixed(1)} km ` +
         `(${Math.round(b.dplusM / (b.distanceM / 1000))} m/km ; la zone offre ${Math.round(denivZone)} m entre son point le plus bas et le plus haut).`,
     };
   }
+}
+
+/** Score du mode normal : écarts relatifs aux tolérances, allers-retours. */
+function scoreCible(m: { distanceM: number; dplusM: number; allerRetour: number }, t: { d: number; h: number }) {
+  const ed = Math.abs(m.distanceM - t.d) / t.d / TOL_DISTANCE;
+  const eh = Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
+  const f = (x: number) => (x <= 1 ? x : 1 + 2 * (x - 1));
+  return f(ed) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
+}
+
+/**
+ * Prochain point pour un D+ visé : poids maximal quand la pente à vol
+ * d'oiseau (dans le sens de l'étape) est proche de la pente visée.
+ */
+function choisirPenteVisee(options: number[], cur: number, versHaut: boolean, visee: number, g: Graph,
+  dist: (a: number, b: number) => number, rand: () => number): number {
+  const poids = options.map((n) => {
+    const pente = ((g.ele[n] - g.ele[cur]) * (versHaut ? 1 : -1)) / Math.max(dist(cur, n), 200);
+    return Math.exp(-(((Math.max(pente, 0) - visee) / 0.03) ** 2));
+  });
+  const total = poids.reduce((a, b) => a + b, 0);
+  if (total === 0) return options[Math.floor(rand() * options.length)];
+  let x = rand() * total;
+  for (let k = 0; k < options.length; k++) if ((x -= poids[k]) <= 0) return options[k];
+  return options[options.length - 1];
 }
 
 function echantillon<T>(t: T[], n: number, rand: () => number): T[] {
