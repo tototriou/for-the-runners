@@ -7,8 +7,9 @@
      partielles : seuls les groupes de lignes qui recoupent la région sont lus.
   2. Filtres piétons, découpage aux connecteurs, composantes connexes,
      fusion des nœuds de degré 2 (jamais à cheval sur deux tuiles).
-  3. Altitude : service altimétrique IGN de la Géoplateforme, par lots, avec
-     cache ; repli automatique sur le MNT SRTM 1" (tuiles « skadi » d'AWS).
+  3. Altitude : RGE ALTI 5 m de l'IGN (sol nu), téléchargé par département
+     (champ « rgealti » de la région) ; SRTM 1" (AWS) hors de France ou si
+     l'IGN est injoignable.
   4. Par arête : longueur, D+ dans chaque sens (altitude échantillonnée tous
      les 30 m), type (route / sentier), géométrie simplifiée avec altitudes.
   5. Export : une tuile JSON gzip par case de la grille globale
@@ -43,7 +44,6 @@ CACHE = ROOT / ".cache"
 DATA = ROOT / "public" / "data"
 OVERTURE = "https://overturemaps-us-west-2.s3.amazonaws.com/"
 SKADI = "https://s3.amazonaws.com/elevation-tiles-prod/skadi/"
-IGN_URL = "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
 
 # Grille globale des tuiles (≈ 11 × 11,5 km à 46° N). Partagée avec
 # src/core/tiles.ts : à changer des deux côtés.
@@ -481,57 +481,171 @@ class MntSrtm:
         return out
 
 
-class MntIgn:
-    """Service altimétrique IGN (RGE ALTI), interrogé par lots avec cache disque."""
+class MntRgeAlti:
+    """RGE ALTI® 5 m de l'IGN (relief du sol nu), téléchargé par département.
 
-    LOT = 4000
+    Le SRTM mesure le dessus des toits et des arbres : en ville, le D+
+    sortait gonflé (Paris, Strasbourg). Le RGE ALTI décrit le sol. Les
+    archives (≈ 330 Mo en 7z par département) sont gardées en cache ; seules
+    les dalles (5 × 5 km, ASC en Lambert 93) qui contiennent des points sont
+    décompressées, lues puis effacées. Hors des départements donnés (pays
+    voisins), les points restent NaN : repli SRTM dans MntComposite.
 
-    def __init__(self):
-        self.chemin = CACHE / "ign-alti.json.gz"
-        self.cache = {}
-        if self.chemin.exists():
-            with gzip.open(self.chemin, "rt") as f:
-                self.cache = json.load(f)
+    L'API altimétrique de la Géoplateforme n'est pas utilisée : elle ne
+    répond qu'à de petites requêtes GET, inexploitables pour des dizaines de
+    millions de points.
+    """
+
+    ATOM = "https://data.geopf.fr/telechargement/resource/RGEALTI"
+
+    def __init__(self, departements):
+        self.departements = departements
+        self.dossier = CACHE / "rgealti"
+
+    @staticmethod
+    def _curl(url, sortie=None, essais=4):
+        # curl plutôt que requests : le service répond lentement et le proxy
+        # de l'environnement de construction coupait les connexions requests.
+        import subprocess
+        r = None
+        for essai in range(essais):
+            cmd = ["curl", "-sS", "-f", "-L", "-m", "1800"]
+            if sortie:
+                cmd += ["-o", str(sortie)]
+            r = subprocess.run(cmd + [url], capture_output=True)
+            if r.returncode == 0:
+                return None if sortie else r.stdout.decode("utf-8", "replace")
+            time.sleep(3 * (essai + 1))
+        raise RuntimeError(f"téléchargement impossible : {url} ({r.stderr.decode()[:200]})")
+
+    def _archive(self, dep):
+        """Chemin local de l'archive 5 m du département (téléchargée au besoin)."""
+        self.dossier.mkdir(parents=True, exist_ok=True)
+        deja = sorted(self.dossier.glob(f"RGEALTI_2-0_5M_ASC_*_{dep}_*.7z"))
+        if deja:
+            return deja[-1]
+        atom = self._curl(f"{self.ATOM}?zone={dep}")
+        noms = sorted(set(re.findall(r"<title>(RGEALTI_2-0_5M_ASC_[^<]*_" + dep + r"_[^<]*)</title>", atom)))
+        if not noms:
+            raise RuntimeError(f"pas de RGE ALTI 5 m pour {dep}")
+        nom = noms[-1]
+        detail = self._curl(f"{self.ATOM}/{nom}")
+        liens = sorted(set(re.findall(r'href="([^"]+\.7z(?:\.\d+)?)"', detail)))
+        if len(liens) != 1:
+            raise RuntimeError(f"{nom} : archive en {len(liens)} parties, non prise en charge")
+        chemin = self.dossier / f"{nom}.7z"
+        print(f"[rgealti] téléchargement {nom}", flush=True)
+        partiel = chemin.with_suffix(".part")
+        self._curl(liens[0], sortie=partiel)
+        partiel.rename(chemin)
+        return chemin
 
     def altitudes(self, lat, lon):
-        cles = [f"{a:.5f},{b:.5f}" for a, b in zip(lat, lon)]
-        manquants = sorted(set(cles) - self.cache.keys())
-        for i in range(0, len(manquants), self.LOT):
-            lot = manquants[i:i + self.LOT]
-            for essai in range(4):
-                try:
-                    r = requests.post(IGN_URL, data={
-                        "lat": "|".join(c.split(",")[0] for c in lot),
-                        "lon": "|".join(c.split(",")[1] for c in lot),
-                        "resource": "ign_rge_alti_wld", "zonly": "true", "delimiter": "|"}, timeout=120)
-                    r.raise_for_status()
-                    z = r.json()["elevations"]
-                    break
-                except Exception:
-                    if essai == 3:
-                        raise
-                    time.sleep(2 ** (essai + 1))
-            for c, v in zip(lot, z):
-                self.cache[c] = None if v is None or v <= -9999 else float(v)
-            print(f"[ign] {min(i + self.LOT, len(manquants))}/{len(manquants)} points")
-        if manquants:
+        import shutil as sh
+        import tempfile
+
+        import py7zr
+        from pyproj import Transformer
+
+        x, y = Transformer.from_crs("EPSG:4326", "EPSG:2154", always_xy=True).transform(lon, lat)
+        x = np.asarray(x)
+        y = np.asarray(y)
+        out = np.full(len(lat), np.nan)
+        for dep in self.departements:
+            archive = self._archive(dep)
+            with py7zr.SevenZipFile(archive) as z:
+                noms = [n for n in z.getnames() if n.lower().endswith(".asc")]
+            # Nom de dalle : …_XXXX_YYYY_MNT_… (coin haut gauche, en km).
+            a_faire = []
+            for n in noms:
+                m = re.search(r"_(\d{4})_(\d{4})_MNT", n)
+                if not m:
+                    continue
+                x0, y1 = int(m.group(1)) * 1000, int(m.group(2)) * 1000
+                if np.any((x >= x0) & (x < x0 + 5000) & (y <= y1) & (y > y1 - 5000) & np.isnan(out)):
+                    a_faire.append(n)
+            print(f"[rgealti] {dep} : {len(a_faire)}/{len(noms)} dalles utiles", flush=True)
+            if not a_faire:
+                continue
             CACHE.mkdir(exist_ok=True)
-            with gzip.open(self.chemin, "wt") as f:
-                json.dump(self.cache, f)
-        return np.array([np.nan if self.cache[c] is None else self.cache[c] for c in cles])
+            tmp = Path(tempfile.mkdtemp(dir=CACHE))
+            try:
+                for i in range(0, len(a_faire), 40):
+                    lot = a_faire[i:i + 40]
+                    with py7zr.SevenZipFile(archive) as z:
+                        z.extract(path=tmp, targets=lot)
+                    for n in lot:
+                        f = tmp / n
+                        self._echantillonner(f, x, y, out)
+                        f.unlink()
+            finally:
+                sh.rmtree(tmp, ignore_errors=True)
+        manquants = int(np.isnan(out).sum())
+        print(f"[rgealti] {len(out) - manquants}/{len(out)} points couverts", flush=True)
+        return out
+
+    @staticmethod
+    def _echantillonner(fichier, x, y, out):
+        """Interpolation bilinéaire des points de la dalle encore sans altitude."""
+        with open(fichier) as f:
+            entete = {}
+            for _ in range(6):
+                k, v = f.readline().split()
+                entete[k.lower()] = float(v)
+            t = np.array(f.read().split(), dtype=np.float32)
+        nc, nl = int(entete["ncols"]), int(entete["nrows"])
+        t = t.reshape(nl, nc)
+        t[t <= entete.get("nodata_value", -99999)] = np.nan
+        pas = entete["cellsize"]
+        x0 = entete["xllcorner"] if "xllcorner" in entete else entete["xllcenter"] - pas / 2
+        y0 = entete["yllcorner"] if "yllcorner" in entete else entete["yllcenter"] - pas / 2
+        y1 = y0 + nl * pas
+        m = (x >= x0) & (x < x0 + nc * pas) & (y > y0) & (y <= y1) & np.isnan(out)
+        if not m.any():
+            return
+        # Ligne 0 = nord ; valeurs aux centres de cellule.
+        fx = (x[m] - x0) / pas - 0.5
+        fy = (y1 - y[m]) / pas - 0.5
+        j0 = np.clip(np.floor(fx).astype(int), 0, nc - 2)
+        i0 = np.clip(np.floor(fy).astype(int), 0, nl - 2)
+        dx = np.clip(fx - j0, 0, 1)
+        dy = np.clip(fy - i0, 0, 1)
+        v = (t[i0, j0] * (1 - dx) * (1 - dy) + t[i0, j0 + 1] * dx * (1 - dy)
+             + t[i0 + 1, j0] * (1 - dx) * dy + t[i0 + 1, j0 + 1] * dx * dy)
+        idx = np.nonzero(m)[0]
+        out[idx] = v
 
 
-def choisir_mnt(mode, sigma):
-    if mode in ("ign", "auto"):
+class MntComposite:
+    """RGE ALTI là où il couvre, SRTM ailleurs (pays voisins, vides)."""
+
+    def __init__(self, principal, repli):
+        self.principal = principal
+        self.repli = repli
+
+    def altitudes(self, lat, lon):
+        z = self.principal.altitudes(lat, lon)
+        trous = np.isnan(z)
+        if trous.any():
+            z[trous] = self.repli.altitudes(lat[trous], lon[trous])
+        return z
+
+
+def choisir_mnt(mode, sigma, region):
+    srtm = MntSrtm(sigma)
+    nom_srtm = f"SRTM 1\" (AWS Terrain Tiles), flou gaussien σ = {sigma} px"
+    deps = region.get("rgealti") or []
+    if mode in ("ign", "auto") and deps:
         try:
-            MntIgn().altitudes(np.array([45.8992]), np.array([6.1294]))
-            print("[mnt] IGN Géoplateforme (RGE ALTI)")
-            return MntIgn(), "IGN RGE ALTI (Géoplateforme)"
+            rge = MntRgeAlti(deps)
+            rge._archive(deps[0])  # vérifie l'accès avant de tout lancer
+            print(f"[mnt] RGE ALTI 5 m (IGN), départements {', '.join(deps)} ; SRTM hors de France")
+            return MntComposite(rge, srtm), f"RGE ALTI 5 m (IGN) ; hors de France : {nom_srtm}"
         except Exception as e:
             if mode == "ign":
                 raise
-            print(f"[mnt] IGN injoignable ({type(e).__name__}) : repli sur SRTM 1\"")
-    return MntSrtm(sigma), f"SRTM 1\" (AWS Terrain Tiles), flou gaussien σ = {sigma} px"
+            print(f"[mnt] RGE ALTI indisponible ({type(e).__name__}: {e}) : repli sur SRTM")
+    return srtm, nom_srtm
 
 
 # ----------------------------------------------------------------- 4-5. export
@@ -664,10 +778,10 @@ def main():
     anciennes = {}
     if manifeste_chemin.exists():
         anciennes = {r["id"]: r for r in json.loads(manifeste_chemin.read_text())["regions"]}
-    mnt, nom_mnt = choisir_mnt(args.dem, args.lissage)
     for region in cfg["regions"]:
         if region["id"] not in choisies:
             continue
+        mnt, nom_mnt = choisir_mnt(args.dem, args.lissage, region)
         aretes = charger_aretes_brutes(region, release)
         aretes = filtrer_sous_classes(aretes)
         aretes = garder_grandes_composantes(aretes)

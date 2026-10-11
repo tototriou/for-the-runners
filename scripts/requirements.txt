@@ -3,3 +3,5 @@ requests
 pyarrow
 fsspec
 aiohttp
+pyproj
+py7zr
