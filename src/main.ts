@@ -16,6 +16,7 @@ const form = $<HTMLFormElement>('form');
 const go = $<HTMLButtonElement>('go');
 const statusEl = $<HTMLParagraphElement>('status');
 const results = $<HTMLOListElement>('results');
+const essayer = $<HTMLButtonElement>('essayer');
 const profileBox = $<HTMLElement>('profile-box');
 const profile = $<HTMLElement>('profile') as unknown as SVGSVGElement;
 
@@ -112,6 +113,7 @@ form.addEventListener('submit', (e) => {
   const dplusM = Number($<HTMLInputElement>('dplus').value);
   const terrain = $<HTMLSelectElement>('terrain').value as Terrain;
   go.disabled = true;
+  essayer.hidden = true;
   setStatus('Calcul des boucles…');
   worker.postMessage({
     type: 'generate',
@@ -133,6 +135,16 @@ function afficher(res: Reponse) {
   const ch = res.chargement;
   const duree = ((res.stats.ms + (ch?.ms ?? 0)) / 1000).toFixed(1);
   setStatus(`${res.message} (${duree} s${ch ? `, ${ch.tuiles} tuile${ch.tuiles > 1 ? 's' : ''}` : ''})`, !res.ok);
+  // Demande impossible : un D+ réalisable, à essayer en un clic.
+  essayer.hidden = !res.suggestion;
+  if (res.suggestion) {
+    const dp = res.suggestion.dplusM;
+    essayer.textContent = `Essayer ${dp} m de D+ (${res.suggestion.sens === 'reduire' ? 'moins' : 'plus'} de dénivelé)`;
+    essayer.onclick = () => {
+      $<HTMLInputElement>('dplus').value = String(dp);
+      form.requestSubmit();
+    };
+  }
   if (res.loops.length === 0) return;
 
   res.loops.forEach((loop, i) => {
