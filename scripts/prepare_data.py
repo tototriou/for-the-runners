@@ -56,6 +56,12 @@ CLASSES_ROUTE = {
     "unclassified", "service", "pedestrian", "cycleway", "unknown",
 }
 CLASSES_SENTIER = {"path", "track", "footway", "steps", "bridleway"}
+# Code de classe écrit dans les tuiles (champ « cls ») : l'indice dans cette
+# liste. Partagée avec src/core/graph.ts (CLASSES) : à changer des deux côtés.
+CLASSES = ["primary", "secondary", "tertiary", "residential", "living_street", "unclassified",
+           "service", "pedestrian", "cycleway", "unknown", "path", "track", "footway", "steps", "bridleway"]
+# Voies en travaux ou abandonnées : sur tout le segment, infranchissables.
+DRAPEAUX_EXCLUS = {"is_under_construction", "is_abandoned"}
 # Un trottoir ou un passage piéton reste urbain : classé route.
 SOUS_CLASSES_URBAINES = {"sidewalk", "crosswalk"}
 # Allées privées et de parking : réelles, mais le routage s'en servait de
@@ -197,9 +203,12 @@ def saut_aberrant(coords):
     return any(haversine(*coords[i], *coords[i + 1]) > SAUT_MAX_M for i in range(len(coords) - 1))
 
 
-def raison_exclusion(cls, sous_classe, access, coords):
+def raison_exclusion(cls, sous_classe, access, coords, drapeaux=None):
     if cls not in CLASSES_ROUTE and cls not in CLASSES_SENTIER:
         return cls
+    for d in drapeaux or []:
+        if d.get("between") is None and DRAPEAUX_EXCLUS & set(d.get("values") or []):
+            return "travaux ou abandon"
     if interdit_aux_pietons(access):
         return "interdit"
     if prive(access):
@@ -244,7 +253,7 @@ def charger_aretes_brutes(region, release):
     import pyarrow.parquet as pq
 
     bbox = region["bbox"]
-    cle = CACHE / f"aretes2-{region['id']}-{release}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
+    cle = CACHE / f"aretes3-{region['id']}-{release}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
     if cle.exists():
         print(f"[overture] cache : {cle.name}")
         with gzip.open(cle, "rb") as f:
@@ -253,7 +262,7 @@ def charger_aretes_brutes(region, release):
     xmin, ymin, xmax, ymax = bbox
     fs = fsspec.filesystem("https")
     fichiers = lister_fichiers(release)
-    colonnes = ["subtype", "class", "subclass", "connectors", "geometry", "bbox", "access_restrictions"]
+    colonnes = ["subtype", "class", "subclass", "connectors", "geometry", "bbox", "access_restrictions", "road_flags"]
     aretes = []  # [connA, connB, coords, type]
     exclus = defaultdict(int)
     t0 = time.time()
@@ -283,7 +292,7 @@ def charger_aretes_brutes(region, release):
             coords = wkb_linestring(row["geometry"])
             if not coords or len(coords) < 2:
                 continue
-            raison = raison_exclusion(row["class"], row["subclass"], row["access_restrictions"], coords)
+            raison = raison_exclusion(row["class"], row["subclass"], row["access_restrictions"], coords, row["road_flags"])
             if raison:
                 exclus[raison] += 1
                 continue
@@ -303,7 +312,7 @@ def charger_aretes_brutes(region, release):
                     continue
                 if not dans_boite(*morceau[0], bbox):
                     ca, cb, morceau = cb, ca, morceau[::-1]
-                aretes.append([ca, cb, morceau, t, row["subclass"]])
+                aretes.append([ca, cb, morceau, t, row["subclass"], CLASSES.index(row["class"])])
         print(f"[overture] {region['id']} {k + 1}/{len(fichiers)} : {len(groupes)} groupe(s), "
               f"{len(aretes)} arêtes ({time.time() - t0:.0f} s)", flush=True)
     print(f"[overture] exclus : {dict(exclus)}")
@@ -316,7 +325,7 @@ def charger_aretes_brutes(region, release):
 # ------------------------------------------------------------------ 2. graphe
 
 def filtrer_sous_classes(aretes):
-    garde = [[a, b, c, t] for a, b, c, t, sc in aretes if sc not in SOUS_CLASSES_EXCLUES]
+    garde = [[a, b, c, t, cls] for a, b, c, t, sc, cls in aretes if sc not in SOUS_CLASSES_EXCLUES]
     print(f"[graphe] sous-classes exclues ({', '.join(sorted(SOUS_CLASSES_EXCLUES))}) : "
           f"{len(aretes) - len(garde)} arêtes retirées, {len(garde)} gardées")
     return garde
@@ -349,7 +358,7 @@ def garder_grandes_composantes(aretes):
 
 
 def fusionner_degre_2(aretes):
-    """Fusionne les nœuds de degré 2 reliant deux arêtes de même type.
+    """Fusionne les nœuds de degré 2 reliant deux arêtes de même type et classe.
 
     Jamais de boucle sur un nœud (a == b) : une boucle fermée accrochée au
     réseau par un seul nœud reste en deux arêtes, sinon le routage ne
@@ -359,7 +368,7 @@ def fusionner_degre_2(aretes):
     vivantes = dict(enumerate(aretes))
     incid = defaultdict(set)
     pos = {}
-    for i, (a, b, c, _) in vivantes.items():
+    for i, (a, b, c, *_) in vivantes.items():
         incid[a].add(i)
         incid[b].add(i)
         pos.setdefault(a, c[0])
@@ -374,7 +383,7 @@ def fusionner_degre_2(aretes):
             continue
         i, j = tuple(s)
         ei, ej = vivantes[i], vivantes[j]
-        if ei[3] != ej[3]:
+        if ei[3] != ej[3] or ei[4] != ej[4]:  # même type et même classe
             continue
         ci = ei[2] if ei[1] == n else ei[2][::-1]
         ai = ei[0] if ei[1] == n else ei[1]
@@ -384,7 +393,7 @@ def fusionner_degre_2(aretes):
             continue
         if not (tuile[ai] == tuile[n] == tuile[bj]):
             continue
-        nouvelle = [ai, bj, ci + cj[1:], ei[3]]
+        nouvelle = [ai, bj, ci + cj[1:], ei[3], ei[4]]
         del vivantes[i], vivantes[j]
         for x in (ai, bj):
             incid[x].discard(i)
@@ -546,7 +555,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release):
     t0 = time.time()
     # Identifiants de nœud uniques dans la région, positions.
     ids, pos = {}, {}
-    for a, b, coords, _ in aretes:
+    for a, b, coords, *_ in aretes:
         for n, p in ((a, coords[0]), (b, coords[-1])):
             if n not in ids:
                 ids[n] = len(ids)
@@ -554,7 +563,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release):
 
     # Échantillons (D+) et sommets simplifiés (profil), puis un seul appel au MNT.
     lat_pts, lon_pts, plan = [], [], []
-    for a, b, coords, _ in aretes:
+    for a, b, coords, *_ in aretes:
         ech, lg = echantillons(coords, PAS_ECHANTILLON_M)
         simp = douglas_peucker(coords, TOLERANCE_SIMPLIF_M)
         d0 = len(lat_pts)
@@ -595,12 +604,12 @@ def exporter_region(region, aretes, mnt, nom_mnt, release):
             cur = (q(pos[n][0]), q(pos[n][1]))
             flat_noeuds += [cur[0] - prev[0], cur[1] - prev[1]]
             prev = cur
-        A, B, L, UP_AB, UP_BA, T, G = [], [], [], [], [], [], []
+        A, B, L, UP_AB, UP_BA, T, CL, G = [], [], [], [], [], [], [], []
         for e in liste:
-            a, b, coords, t = aretes[e]
+            a, b, coords, t, cls = aretes[e]
             d0, n0, simp, lg = plan[e]
             up, down = denivele(z[d0:d0 + n0])
-            A.append(loc[a]); B.append(loc[b]); T.append(t)
+            A.append(loc[a]); B.append(loc[b]); T.append(t); CL.append(cls)
             L.append(int(round(lg * 10)))
             UP_AB.append(int(round(up * 10))); UP_BA.append(int(round(down * 10)))
             zs = z[d0 + n0:d0 + n0 + len(simp)]
@@ -616,7 +625,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release):
             "ids": [ids[n] for n in ids_loc],
             "nodes": flat_noeuds,
             "nodeEle": [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc],
-            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T},
+            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL},
             "geom": G,
         }
         brut = json.dumps(doc, separators=(",", ":")).encode()
