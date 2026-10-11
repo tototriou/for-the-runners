@@ -35,13 +35,19 @@ function pct(x: number) {
   return `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} %`;
 }
 
-async function jouer(id: string, titre: string, description: string, cas: Cas[]): Promise<ResultatJeu> {
+/**
+ * `bloquantExact` : la réussite qui compte pour le seuil est celle obtenue
+ * depuis le point exact (jeu du cadrage) ; sinon, celle de l'app telle
+ * qu'un coureur l'utilise, départ décalé de 2 km au plus compris.
+ */
+async function jouer(id: string, titre: string, description: string, cas: Cas[], bloquantExact: boolean): Promise<ResultatJeu> {
   const lignes: string[] = [];
   const echecs: string[] = [];
   const temps: number[] = [];
   const allersRetours: number[] = [];
   const reponses: { c: Cas; r: LoopResponse }[] = [];
   let reussis = 0;
+  let exacts = 0;
   let msChargementMax = 0;
   process.stdout.write(`${titre} : `);
   for (const c of cas) {
@@ -51,27 +57,42 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[])
     temps.push(r.stats.ms);
     const ok = r.loops.some((l) => l.dansTolerance);
     if (ok) reussis++;
+    if (ok && !r.depart) exacts++;
     for (const l of r.loops) allersRetours.push(l.allerRetour);
     const b = r.loops[0];
     const cell = b
       ? `${(b.distanceM / 1000).toFixed(2)} km / ${Math.round(b.dplusM)} m | ${pct(b.ecartDistance)} | ${pct(b.ecartDplus)} | ${(b.allerRetour * 100).toFixed(0)} %`
       : '– | – | – | –';
     const nOk = r.loops.filter((l) => l.dansTolerance).length;
+    const verdict = !ok ? '**non**' : r.depart ? `oui, départ décalé de ${Math.round(r.depart.decalageM)} m` : 'oui';
     lignes.push(
-      `| ${c.id} | ${c.depart} | ${c.distanceKm} km / ${c.dplusM} m | ${c.terrain} | ${cell} | ${nOk}/${r.loops.length} | ${(r.stats.ms / 1000).toFixed(2)} s | ${ok ? 'oui' : '**non**'} |`,
+      `| ${c.id} | ${c.depart} | ${c.distanceKm} km / ${c.dplusM} m | ${c.terrain} | ${cell} | ${nOk}/${r.loops.length} | ${(r.stats.ms / 1000).toFixed(2)} s | ${verdict} |`,
     );
     if (!ok) echecs.push(`- #${c.id} ${c.depart}, ${c.distanceKm} km / ${c.dplusM} m (${c.terrain}) : ${r.message}`);
-    process.stdout.write(ok ? '.' : 'x');
+    process.stdout.write(!ok ? 'x' : r.depart ? 'd' : '.');
   }
   process.stdout.write('\n');
   const taux = reussis / cas.length;
+  const tauxExact = exacts / cas.length;
+  const tauxBloquant = bloquantExact ? tauxExact : taux;
   const tMoy = temps.reduce((a, b) => a + b, 0) / temps.length;
   const tMax = Math.max(...temps);
   const tP90 = [...temps].sort((a, b) => a - b)[Math.floor(temps.length * 0.9)];
   const arMoy = allersRetours.reduce((a, b) => a + b, 0) / Math.max(1, allersRetours.length);
   const arAuDela = allersRetours.filter((x) => x >= SEUIL_ALLER_RETOUR).length;
   const criteres: Critere[] = [
-    { nom: 'Demandes avec au moins une boucle dans la tolérance', seuil: '≥ 80 %', valeur: `${(taux * 100).toFixed(0)} % (${reussis}/${cas.length})`, ok: taux >= SEUIL_REUSSITE },
+    {
+      nom: bloquantExact ? 'Demandes avec une boucle dans la tolérance, depuis le point exact' : 'Demandes avec une boucle dans la tolérance, départ décalé de 2 km au plus compris',
+      seuil: '≥ 80 %',
+      valeur: `${(tauxBloquant * 100).toFixed(0)} % (${bloquantExact ? exacts : reussis}/${cas.length})`,
+      ok: tauxBloquant >= SEUIL_REUSSITE,
+    },
+    {
+      nom: bloquantExact ? 'Pour information : départ décalé de 2 km au plus compris' : 'Pour information : depuis le point exact',
+      seuil: '–',
+      valeur: `${((bloquantExact ? taux : tauxExact) * 100).toFixed(0)} % (${bloquantExact ? reussis : exacts}/${cas.length})`,
+      ok: true,
+    },
     { nom: 'Temps de calcul (Node, max)', seuil: '< 10 s (viser < 3 s)', valeur: `max ${(tMax / 1000).toFixed(2)} s, moyenne ${(tMoy / 1000).toFixed(2)} s, p90 ${(tP90 / 1000).toFixed(2)} s`, ok: tMax < SEUIL_TEMPS_MS },
     { nom: 'Tronçons empruntés deux fois (moyenne des boucles proposées)', seuil: '< 15 %', valeur: `${(arMoy * 100).toFixed(1)} % (${arAuDela}/${allersRetours.length} boucles ≥ 15 %)`, ok: arMoy < SEUIL_ALLER_RETOUR },
   ];
@@ -84,9 +105,9 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[])
 const jeux: ResultatJeu[] = [];
 const regionaux = casRegionaux();
 const definitions: [string, string, string, Cas[]][] = [
-  ['annecy', 'Annecy (jeu du cadrage)', '50 demandes : 5 départs × 10 distances de 5 à 30 km, D+ de 50 à 1 500 m.', casDeTest()],
-  ['alsace', 'Alsace', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts).', regionaux.filter((c) => c.region === 'Alsace')],
-  ['idf', 'Île-de-France', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts).', regionaux.filter((c) => c.region === 'Île-de-France')],
+  ['annecy', 'Annecy (jeu du cadrage)', '50 demandes : 5 départs × 10 distances de 5 à 30 km, D+ de 50 à 1 500 m. Seuil jugé depuis le point exact, comme au cadrage.', casDeTest()],
+  ['alsace', 'Alsace', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l\u2019app répond, départ décalé compris.', regionaux.filter((c) => c.region === 'Alsace')],
+  ['idf', 'Île-de-France', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l\u2019app répond, départ décalé compris.', regionaux.filter((c) => c.region === 'Île-de-France')],
 ];
 const presentes = new Set(gen.store.manifest.regions.map((r) => r.id));
 for (const [id, titre, desc, cas] of definitions) {
@@ -95,7 +116,7 @@ for (const [id, titre, desc, cas] of definitions) {
     console.log(`${titre} : région absente du manifeste, jeu ignoré`);
     continue;
   }
-  jeux.push(await jouer(id, titre, desc, cas));
+  jeux.push(await jouer(id, titre, desc, cas, id === 'annecy'));
 }
 
 // ------------------------------------------------------- cibles impossibles
@@ -108,8 +129,13 @@ if (!jeuDemande || jeuDemande === 'annecy') {
     try {
       const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain });
       message = r.message;
+      // Une cible impossible depuis le point exact mais réalisable à moins
+      // de 2 km n'est pas une cible impossible pour l'app.
+      if (r.ok && r.depart) message = `(réalisable en décalant le départ) ${message}`;
       const attenduBoucle = c.attendu === 'boucle la plus proche';
-      const bon = !r.ok && message.length > 0 && (!attenduBoucle || r.loops.length > 0);
+      // Correct : un refus clair (avec la boucle la plus proche si attendue),
+      // ou une solution trouvée en décalant le départ, annoncée comme telle.
+      const bon = message.length > 0 && (r.ok ? !!r.depart : !attenduBoucle || r.loops.length > 0);
       verdict = bon ? 'oui' : '**non**';
       if (!bon) impOk = false;
     } catch (e) {
