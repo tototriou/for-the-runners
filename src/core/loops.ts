@@ -95,7 +95,7 @@ const TOURS_SUPPLEMENTAIRES = 2;
 // les cas en plein Paris le dépassaient (jusqu'à 38 millions, 9,6 s en Node).
 // Une fois épuisé, plus de nouvelle candidate ; les MIN_CANDIDATS premières
 // sont toujours construites.
-const BUDGET_TRAVAIL = 8_000_000;
+export const BUDGET_TRAVAIL = 8_000_000;
 const MIN_CANDIDATS = 10;
 // Repli quand rien n'est possible depuis le point demandé : départs essayés
 // entre 300 m et 2 km, avec un budget de travail en plus du premier.
@@ -108,7 +108,7 @@ const BUDGET_ELARGISSEMENT = 6_000_000;
 // heuristique de forme de boucle : un chemin légèrement sous-optimal suffit.
 // Mesuré sur les trois jeux du banc (0 ; 0,6 ; 0,8 ; 1) : 1 est le plus
 // rapide et ne perd aucune réussite.
-const POIDS_HEURISTIQUE_MIN = 1;
+export const POIDS_HEURISTIQUE_MIN = 1;
 const MODES: (-1 | 0 | 1)[] = [-1, 0, 0, 1, 1];
 const PENALITE_REUSE = 3;
 // Un demi-tour (on part sur une voie et on revient par la même) n'est
@@ -119,7 +119,7 @@ const DETOUR = 1.3;
 const BETAS = [-2, -0.8, 0, 0.8, 1.8, 3];
 const ANGLE_OR = Math.PI * (3 - Math.sqrt(5));
 
-function rng(seed: number) {
+export function rng(seed: number) {
   let s = seed >>> 0 || 1;
   return () => {
     s ^= s << 13;
@@ -151,6 +151,26 @@ const FACTEURS_TERRAIN: Record<Terrain, [number, number]> = {
   route: [1, 2.2],
 };
 
+/**
+ * Coût de chaque arête pour A* : longueur × relief (attiré si beta > 0,
+ * évité si beta < 0) × terrain × classe de voie. `minFactor` minore
+ * coût/longueur.
+ */
+export function coutsAretes(g: Graph, beta: number, terrain: Terrain) {
+  const cost = new Float64Array(g.m);
+  const [fRoute, fSentier] = FACTEURS_TERRAIN[terrain];
+  let minFactor = Infinity;
+  for (let e = 0; e < g.m; e++) {
+    const L = g.len[e];
+    const relief = L > 0 ? (g.upAB[e] + g.upBA[e]) / L : 0;
+    const fPente = Math.min(5, Math.max(0.2, Math.exp(-beta * relief * 10)));
+    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]];
+    cost[e] = Math.max(L, 0.1) * f;
+    if (f < minFactor) minFactor = f;
+  }
+  return { cost, minFactor };
+}
+
 export class LoopGenerator {
   private router: Router;
   private used: Uint16Array;
@@ -174,23 +194,12 @@ export class LoopGenerator {
     const key = `${beta.toFixed(2)}|${terrain}`;
     let c = this.costCache.get(key);
     if (c) return c;
-    const g = this.g;
-    const cost = new Float64Array(g.m);
-    const [fRoute, fSentier] = FACTEURS_TERRAIN[terrain];
-    let minFactor = Infinity;
-    for (let e = 0; e < g.m; e++) {
-      const L = g.len[e];
-      const relief = L > 0 ? (g.upAB[e] + g.upBA[e]) / L : 0;
-      const fPente = Math.min(5, Math.max(0.2, Math.exp(-beta * relief * 10)));
-      const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]];
-      cost[e] = Math.max(L, 0.1) * f;
-      if (f < minFactor) minFactor = f;
-    }
+    c = coutsAretes(this.g, beta, terrain);
     if (this.costCache.size > 40) this.costCache.clear();
-    c = { cost, minFactor };
     this.costCache.set(key, c);
     return c;
   }
+
 
   /** Construit la boucle pour des paramètres donnés (sans ajuster le rayon). */
   private build(start: number, p: Params, terrain: Terrain, target: { d: number; h: number }): Candidate | null {
@@ -506,13 +515,13 @@ function dansTolerance(c: { distanceM: number; dplusM: number }, t: { d: number;
   return Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE && Math.abs(c.dplusM - t.h) / t.h <= TOL_DPLUS;
 }
 
-function jaccard(a: Set<number>, b: Set<number>) {
+export function jaccard(a: Set<number>, b: Set<number>) {
   let inter = 0;
   for (const x of a) if (b.has(x)) inter++;
   return inter / (a.size + b.size - inter);
 }
 
-function mesurer(g: Graph, edges: number[], dirs: number[]) {
+export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   let distanceM = 0;
   let dplusM = 0;
   const count = new Map<number, number>();
@@ -536,7 +545,7 @@ function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t:
   return f(ed) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
 }
 
-function finaliser(g: Graph, c: Candidate, t: { d: number; h: number }): Loop {
+export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: { d: number; h: number }): Loop {
   const coords: [number, number, number][] = [];
   const first = c.dirs[0] ? g.a[c.edges[0]] : g.b[c.edges[0]];
   coords.push([g.lat[first], g.lon[first], g.ele[first]]);

@@ -115,6 +115,7 @@ export class Router {
         if (this.done[v] === gen) continue;
         const e = g.adjEdge[k];
         let c = edgeCost[e];
+        if (c === Infinity) continue; // arête interdite (hors zone)
         if (used[e] > 0) c *= 1 + reusePenalty * used[e];
         const nd = du + c;
         if (this.stamp[v] !== gen || nd < this.dist[v]) {
