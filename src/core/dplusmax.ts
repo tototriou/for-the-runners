@@ -43,8 +43,11 @@ const POOL_MIN = 12;
 // Pas de saut trop court entre deux points : sinon on tourne sur place.
 const SAUT_MIN_M = 150;
 const DETOUR = 1.3;
-// Départ hors de la zone : le chemin d'accès est permis, mais cher.
+// Hors de la zone, seul l'accès est permis, et cher : tout le réseau si le
+// départ est dehors, sinon ce qui est à moins de ACCES_M du départ (un départ
+// sur la bordure n'a souvent aucun tronçon entièrement dedans).
 const FACTEUR_ACCES = 20;
+const ACCES_M = 300;
 const MAX_ETAPES = 40;
 const ECHANTILLON_ETAPE = 60;
 
@@ -149,9 +152,11 @@ export class DplusMaxGenerator {
     // l'accès si le départ est dehors).
     const couts = BETAS.map((beta) => {
       const { cost, minFactor } = coutsAretes(g, beta, req.terrain);
+      const proche = (n: number) => (g.x[n] - g.x[start]) ** 2 + (g.y[n] - g.y[start]) ** 2 <= ACCES_M ** 2;
       for (let e = 0; e < g.m; e++) {
         if (dedans[g.a[e]] && dedans[g.b[e]]) continue;
-        cost[e] = departDedans ? Infinity : cost[e] * FACTEUR_ACCES;
+        const acces = !departDedans || (proche(g.a[e]) && proche(g.b[e]));
+        cost[e] = acces ? cost[e] * FACTEUR_ACCES : Infinity;
       }
       return { cost, h: Math.max(minFactor, POIDS_HEURISTIQUE_MIN) };
     });
@@ -190,6 +195,10 @@ export class DplusMaxGenerator {
       const edges: number[] = [];
       const dirs: number[] = [];
       let cum = 0;
+      // Détour réel (chemin ÷ vol d'oiseau) mesuré sur les tronçons déjà
+      // tracés : en ville, le 1,3 par défaut faisait dépasser la distance.
+      let volOiseau = 0;
+      const detour = () => (volOiseau > 300 ? Math.min(2, Math.max(1.05, cum / volOiseau)) : DETOUR);
       let cur = start;
       let versHaut = g.ele[start] < g.ele[hauts[0]];
       const aller = (cible: number) => {
@@ -197,6 +206,7 @@ export class DplusMaxGenerator {
         const r = this.router.route(cur, cible, cost, h, this.used, penalite);
         this.travail += this.router.settled;
         if (!r) return false;
+        volOiseau += dist(cur, cible);
         for (let j = 0; j < r.edges.length; j++) {
           const e = r.edges[j];
           edges.push(e);
@@ -209,21 +219,21 @@ export class DplusMaxGenerator {
       };
       for (let etape = 0; etape < MAX_ETAPES; etape++) {
         const reste = D - cum;
-        const retour = dist(cur, start) * DETOUR;
+        const retour = dist(cur, start) * detour();
         // Les extrêmes de la zone, plus un échantillon de tous ses nœuds :
         // une rue raide à mi-pente vaut souvent mieux qu'un sommet lointain.
         const pool = (versHaut ? hauts : bas).concat(echantillon(zoneNoeuds, ECHANTILLON_ETAPE, rand));
         // Assez de distance pour une montée de plus et le retour ?
         const options = pool.filter((n) => n !== cur && dist(cur, n) >= SAUT_MIN_M);
         if (options.length === 0) break;
-        const possibles = options.filter((n) => (dist(cur, n) + dist(n, start)) * DETOUR <= reste);
+        const possibles = options.filter((n) => (dist(cur, n) + dist(n, start)) * detour() <= reste);
         if (possibles.length === 0 || reste < retour * 1.6) {
           // Dernier point : celui qui fait retomber sur la distance visée.
           let best = -1;
           let bestErr = Infinity;
           for (const n of zoneNoeuds.length > 400 ? options.concat(echantillon(zoneNoeuds, 400, rand)) : zoneNoeuds) {
             if (n === cur || n === start) continue;
-            const err = Math.abs((dist(cur, n) + dist(n, start)) * DETOUR - reste);
+            const err = Math.abs((dist(cur, n) + dist(n, start)) * detour() - reste);
             if (err < bestErr) {
               bestErr = err;
               best = n;
@@ -273,7 +283,10 @@ export class DplusMaxGenerator {
       return {
         ok: false, loops, startNode: start, stats,
         message: `Aucune boucle de ${req.distanceKm} km (±5 %) n’a été trouvée ${zoneTxt}. ` +
-          `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km. Agrandis la zone ou réduis la distance.`,
+          `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km. ` +
+          (departDedans
+            ? 'Agrandis la zone ou change la distance.'
+            : 'Le départ est hors de la zone : l’accès compte dans la distance. Rapproche le départ, agrandis la zone ou change la distance.'),
       };
     }
     const b = loops[0];
