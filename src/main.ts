@@ -5,6 +5,7 @@ import { toGpx } from './core/gpx';
 import type { Loop, LoopResponse } from './core/loops';
 import type { Terrain } from './core/graph';
 import type { Manifest, RegionMeta } from './core/tiles';
+import type { Zone } from './core/dplusmax';
 
 type Reponse = LoopResponse & { chargement?: { region: string; tuiles: number; ms: number } };
 
@@ -19,6 +20,15 @@ const results = $<HTMLOListElement>('results');
 const essayer = $<HTMLButtonElement>('essayer');
 const profileBox = $<HTMLElement>('profile-box');
 const profile = $<HTMLElement>('profile') as unknown as SVGSVGElement;
+const objectif = $<HTMLSelectElement>('objectif');
+const dplusInput = $<HTMLInputElement>('dplus');
+const zoneBox = $<HTMLFieldSetElement>('zone-box');
+const zoneType = $<HTMLSelectElement>('zone-type');
+const rayonInput = $<HTMLInputElement>('rayon');
+const dessinBox = $<HTMLElement>('dessin-box');
+const boutonDessiner = $<HTMLButtonElement>('dessiner');
+const allersRetours = $<HTMLInputElement>('allers-retours');
+const hint = $<HTMLElement>('hint');
 
 const map = L.map('map', { zoomControl: true });
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -31,6 +41,11 @@ let depart: L.LatLng | null = null;
 // images que le bundler ne résout pas.
 const marqueur = L.circleMarker([0, 0], { radius: 8, color: '#ffffff', weight: 3, fillColor: '#15803d', fillOpacity: 1 });
 const calques = L.layerGroup().addTo(map);
+// Zone du mode D+ maximal, à part : elle reste affichée entre deux calculs.
+const calqueZone = L.layerGroup().addTo(map);
+let dessin = false;
+let pointsZone: L.LatLng[] = [];
+let dernierModeMax = false;
 let lignes: L.Polyline[] = [];
 let boucles: Loop[] = [];
 
@@ -45,9 +60,77 @@ function setStatus(texte: string, warn = false) {
 function placerDepart(ll: L.LatLng) {
   depart = ll;
   marqueur.setLatLng(ll).addTo(map);
+  majZone();
 }
 
-map.on('click', (e: L.LeafletMouseEvent) => placerDepart(e.latlng));
+// En cours de dessin, toucher la carte ajoute un sommet à la zone au lieu
+// de déplacer le départ.
+map.on('click', (e: L.LeafletMouseEvent) => {
+  if (dessin) {
+    pointsZone.push(e.latlng);
+    majZone();
+  } else placerDepart(e.latlng);
+});
+
+const modeMax = () => objectif.value === 'max';
+
+function majFormulaire() {
+  const max = modeMax();
+  $('dplus-label').hidden = max;
+  dplusInput.required = !max;
+  dplusInput.disabled = max;
+  zoneBox.hidden = !max;
+  const cercle = zoneType.value === 'cercle';
+  $('rayon-label').hidden = !cercle;
+  dessinBox.hidden = cercle;
+  if (!max || cercle) arreterDessin();
+  majZone();
+}
+
+function arreterDessin() {
+  dessin = false;
+  boutonDessiner.setAttribute('aria-pressed', 'false');
+  boutonDessiner.textContent = pointsZone.length ? 'Redessiner' : 'Dessiner la zone';
+  hint.textContent = 'Touche la carte pour placer le départ.';
+}
+
+function majZone() {
+  calqueZone.clearLayers();
+  if (!modeMax()) return;
+  const style = { color: '#15803d', weight: 2, dashArray: '6 6', fillOpacity: 0.06, interactive: false };
+  if (zoneType.value === 'cercle') {
+    if (depart) L.circle(depart, { ...style, radius: Number(rayonInput.value) * 1000 }).addTo(calqueZone);
+  } else if (pointsZone.length >= 2) {
+    L.polygon(pointsZone, style).addTo(calqueZone);
+  }
+  for (const p of dessin ? pointsZone : []) {
+    L.circleMarker(p, { radius: 4, color: '#15803d', weight: 2, fillOpacity: 1, interactive: false }).addTo(calqueZone);
+  }
+}
+
+objectif.addEventListener('change', majFormulaire);
+zoneType.addEventListener('change', majFormulaire);
+rayonInput.addEventListener('input', majZone);
+boutonDessiner.addEventListener('click', () => {
+  if (dessin) return arreterDessin();
+  dessin = true;
+  pointsZone = [];
+  // Les boucles précédentes sont cliquables et intercepteraient les touches.
+  calques.clearLayers();
+  results.replaceChildren();
+  profileBox.hidden = true;
+  boutonDessiner.setAttribute('aria-pressed', 'true');
+  boutonDessiner.textContent = 'Terminer le dessin';
+  hint.textContent = 'Touche la carte pour ajouter les coins de la zone, puis « Terminer le dessin ».';
+  majZone();
+  // Sur téléphone, la carte est au-dessus du formulaire : la ramener à l'écran.
+  map.getContainer().scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$<HTMLButtonElement>('effacer').addEventListener('click', () => {
+  pointsZone = [];
+  majZone();
+  if (!dessin) arreterDessin();
+});
 
 worker.onmessage = (ev: MessageEvent) => {
   const msg = ev.data;
@@ -112,8 +195,27 @@ form.addEventListener('submit', (e) => {
   const distanceKm = Number($<HTMLInputElement>('distance').value);
   const dplusM = Number($<HTMLInputElement>('dplus').value);
   const terrain = $<HTMLSelectElement>('terrain').value as Terrain;
-  go.disabled = true;
   essayer.hidden = true;
+  dernierModeMax = modeMax();
+  if (dernierModeMax) {
+    let zone: Zone;
+    if (zoneType.value === 'cercle') {
+      zone = { kind: 'cercle', rayonM: Number(rayonInput.value) * 1000 };
+    } else {
+      if (pointsZone.length < 3) return setStatus('Dessine d\u2019abord la zone : au moins 3 points sur la carte.', true);
+      arreterDessin();
+      zone = { kind: 'polygone', points: pointsZone.map((p) => [p.lat, p.lng]) };
+    }
+    go.disabled = true;
+    setStatus('Recherche du D+ maximal…');
+    worker.postMessage({
+      type: 'generateMax',
+      id: ++idReq,
+      req: { lat: depart.lat, lon: depart.lng, distanceKm, terrain, zone, allersRetours: allersRetours.checked },
+    });
+    return;
+  }
+  go.disabled = true;
   setStatus('Calcul des boucles…');
   worker.postMessage({
     type: 'generate',
@@ -164,7 +266,9 @@ function afficher(res: Reponse) {
       <span class="main">${(loop.distanceM / 1000).toFixed(1)} km · ${Math.round(loop.dplusM)} m D+</span>
       <span class="gaps">
         <span class="${Math.abs(loop.ecartDistance) <= 0.05 ? 'ok' : 'ko'}">dist. ${pct(loop.ecartDistance)}</span> ·
-        <span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·
+        ${dernierModeMax
+          ? `${Math.round(loop.dplusM / (loop.distanceM / 1000))} m/km`
+          : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span>`} ·
         aller-retour ${(loop.allerRetour * 100).toFixed(0)} %${
           loop.grandesRoutesM >= 100
             ? ` · <span class="${loop.grandesRoutesM >= 1000 ? 'ko' : ''}">${(loop.grandesRoutesM / 1000).toFixed(1).replace('.', ',')} km sur grande route</span>`

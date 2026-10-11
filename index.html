@@ -18,15 +18,40 @@
           <label>Région
             <select id="region"></select>
           </label>
-          <p class="hint">Touche la carte pour placer le départ.</p>
+          <p class="hint" id="hint">Touche la carte pour placer le départ.</p>
+          <label>Objectif
+            <select id="objectif">
+              <option value="cible">D+ visé</option>
+              <option value="max">D+ maximal</option>
+            </select>
+          </label>
           <div class="row">
             <label>Distance (km)
               <input id="distance" type="number" inputmode="decimal" min="1" max="60" step="0.5" value="12" required />
             </label>
-            <label>D+ (m)
+            <label id="dplus-label">D+ (m)
               <input id="dplus" type="number" inputmode="numeric" min="0" max="4000" step="10" value="400" required />
             </label>
           </div>
+          <fieldset id="zone-box" hidden>
+            <legend>Zone</legend>
+            <div class="row">
+              <label>Forme
+                <select id="zone-type">
+                  <option value="cercle">Cercle autour du départ</option>
+                  <option value="polygone">Zone dessinée</option>
+                </select>
+              </label>
+              <label id="rayon-label">Rayon (km)
+                <input id="rayon" type="number" inputmode="decimal" min="0.3" max="15" step="0.1" value="2" />
+              </label>
+            </div>
+            <div class="row" id="dessin-box" hidden>
+              <button id="dessiner" type="button" class="secondaire">Dessiner la zone</button>
+              <button id="effacer" type="button" class="secondaire">Effacer</button>
+            </div>
+            <label class="case"><input id="allers-retours" type="checkbox" /> Autoriser les allers-retours (côte répétée)</label>
+          </fieldset>
           <label>Terrain
             <select id="terrain">
               <option value="mixte">Mixte</option>

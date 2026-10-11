@@ -140,20 +140,21 @@ export class TileStore {
   }
 
   /**
-   * Graphe couvrant le départ pour une boucle de `distanceKm`, ou null si
+   * Graphe couvrant le départ pour une boucle de `distanceKm` (ou le rayon
+   * `rayonM` donné, pour une zone), ou null si
    * le point est hors des régions couvertes. Réutilise le graphe précédent
    * s'il couvre déjà les mêmes tuiles.
    */
-  async graphFor(lat: number, lon: number, distanceKm: number): Promise<{ graph: Graph; region: RegionMeta; tiles: string[]; neuf: boolean } | null> {
+  async graphFor(lat: number, lon: number, distanceKm: number, rayonM = rayonUtileM(distanceKm)): Promise<{ graph: Graph; region: RegionMeta; tiles: string[]; neuf: boolean } | null> {
     const region = regionAt(this.manifest, lat, lon);
     if (!region) return null;
-    const tiles = tilesAround(this.manifest, region, lat, lon, rayonUtileM(distanceKm));
+    const tiles = tilesAround(this.manifest, region, lat, lon, rayonM);
     if (tiles.length === 0) return null;
     const cle = `${region.id}|${tiles.join(',')}`;
     if (this.dernier?.cle === cle) return { graph: this.dernier.graph, region, tiles, neuf: false };
     const docs = await Promise.all(tiles.map((t) => this.tuile(region.id, t)));
     const graph = mergeTiles(docs, {
-      zone: region.name, center: [lat, lon], radiusKm: rayonUtileM(distanceKm) / 1000,
+      zone: region.name, center: [lat, lon], radiusKm: rayonM / 1000,
       reseau: region.reseau, mnt: region.mnt, noeuds: 0, aretes: 0,
     });
     this.dernier = { cle, graph };
