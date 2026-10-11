@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
 import { couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
+import { DplusMaxGenerator } from '../src/core/dplusmax';
 import { chargerStore } from '../bench/load';
 
 /**
@@ -201,6 +202,42 @@ describe('demi-tours', () => {
     for (const l of r.loops) {
       expect(demiTours(gr.len, l.edges).filter(([, , aller]) => aller < DEMI_TOUR_MIN_M)).toEqual([]);
     }
+  });
+});
+
+describe('D+ maximal (grille synthétique)', () => {
+  const g = grille();
+  const gen = new DplusMaxGenerator(g);
+  const depart = { lat: 45.9, lon: 6.13 };
+
+  it('reste dans le cercle, tient la distance, sans demi-tour court', () => {
+    const rayonM = 1200;
+    const r = gen.generate({ ...depart, distanceKm: 5, terrain: 'mixte', zone: { kind: 'cercle', rayonM } });
+    expect(r.ok).toBe(true);
+    for (const l of r.loops) {
+      verifierBoucle(g, l);
+      for (const e of l.edges) {
+        for (const n of [g.a[e], g.b[e]]) {
+          expect(Math.hypot(g.x[n] - g.x[r.startNode], g.y[n] - g.y[r.startNode])).toBeLessThanOrEqual(rayonM + 1);
+        }
+      }
+      expect(demiTours(g.len, l.edges).filter(([, , aller]) => aller < DEMI_TOUR_MIN_M)).toEqual([]);
+    }
+    expect(Math.abs(r.loops[0].ecartDistance)).toBeLessThanOrEqual(0.05);
+  });
+
+  it('fait plus de D+ qu\u2019une boucle ordinaire de même distance', () => {
+    const max = gen.generate({ ...depart, distanceKm: 5, terrain: 'mixte', zone: { kind: 'cercle', rayonM: 1500 } });
+    const normal = new LoopGenerator(g).generate({ ...depart, distanceKm: 5, dplusM: 150, terrain: 'mixte' });
+    expect(max.loops[0].dplusM).toBeGreaterThan(Math.max(...normal.loops.map((l) => l.dplusM)));
+  });
+
+  it('accepte un départ sur la bordure d\u2019une zone dessinée', () => {
+    const d = 0.008;
+    const zone = { kind: 'polygone' as const, points: [[45.9, 6.13], [45.9, 6.13 + d], [45.9 + d, 6.13 + d], [45.9 + d, 6.13]] as [number, number][] };
+    const r = gen.generate({ ...depart, distanceKm: 3, terrain: 'mixte', zone });
+    expect(r.loops.length).toBeGreaterThan(0);
+    expect(r.message).not.toMatch(/presque aucun chemin/);
   });
 });
 
