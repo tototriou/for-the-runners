@@ -48,6 +48,8 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   const reponses: { c: Cas; r: LoopResponse }[] = [];
   let reussis = 0;
   let exacts = 0;
+  let suggerees = 0;
+  let suggereesOk = 0;
   let msChargementMax = 0;
   process.stdout.write(`${titre} : `);
   for (const c of cas) {
@@ -68,7 +70,18 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
     lignes.push(
       `| ${c.id} | ${c.depart} | ${c.distanceKm} km / ${c.dplusM} m | ${c.terrain} | ${cell} | ${nOk}/${r.loops.length} | ${(r.stats.ms / 1000).toFixed(2)} s | ${verdict} |`,
     );
-    if (!ok) echecs.push(`- #${c.id} ${c.depart}, ${c.distanceKm} km / ${c.dplusM} m (${c.terrain}) : ${r.message}`);
+    if (!ok) {
+      // La demande impossible propose un D+ : vérifier qu'il aboutit vraiment.
+      let suivi = '';
+      if (r.suggestion) {
+        suggerees++;
+        const r2 = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: r.suggestion.dplusM, terrain: c.terrain, seed: SEED });
+        const ok2 = r2.loops.some((l) => l.dansTolerance);
+        if (ok2) suggereesOk++;
+        suivi = ` → suggestion ${r.suggestion.dplusM} m suivie : ${ok2 ? 'aboutit' : '**n\u2019aboutit pas**'}`;
+      }
+      echecs.push(`- #${c.id} ${c.depart}, ${c.distanceKm} km / ${c.dplusM} m (${c.terrain}) : ${r.message}${suivi}`);
+    }
     process.stdout.write(!ok ? 'x' : r.depart ? 'd' : '.');
   }
   process.stdout.write('\n');
@@ -91,6 +104,12 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
       nom: bloquantExact ? 'Pour information : départ décalé de 2 km au plus compris' : 'Pour information : depuis le point exact',
       seuil: '–',
       valeur: `${((bloquantExact ? taux : tauxExact) * 100).toFixed(0)} % (${bloquantExact ? reussis : exacts}/${cas.length})`,
+      ok: true,
+    },
+    {
+      nom: 'Demandes impossibles : D+ suggéré qui aboutit quand on le suit',
+      seuil: '–',
+      valeur: `${suggereesOk}/${suggerees} (${cas.length - reussis - suggerees} sans suggestion)`,
       ok: true,
     },
     { nom: 'Temps de calcul (Node, max)', seuil: '< 10 s (viser < 3 s)', valeur: `max ${(tMax / 1000).toFixed(2)} s, moyenne ${(tMoy / 1000).toFixed(2)} s, p90 ${(tP90 / 1000).toFixed(2)} s`, ok: tMax < SEUIL_TEMPS_MS },
