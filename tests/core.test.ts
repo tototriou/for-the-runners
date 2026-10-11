@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
 import { LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
-import { loadGraph } from '../bench/load';
+import { chargerStore } from '../bench/load';
 
 /**
  * Grille synthétique n × n de pas `pas` mètres autour de (45.9, 6.13), avec
@@ -148,34 +148,62 @@ describe('toGpx', () => {
   });
 });
 
-describe('données réelles (zone Annecy)', () => {
-  const g = loadGraph();
+describe('données réelles (tuiles d\u2019Annecy)', () => {
+  const store = chargerStore();
 
-  it('le graphe est connexe et a des altitudes plausibles', () => {
+  it('recolle les tuiles : un nœud partagé n\u2019apparaît qu\u2019une fois', async () => {
+    const r = (await store.graphFor(45.8992, 6.1294, 20))!;
+    expect(r.tiles.length).toBeGreaterThan(1);
+    const g = r.graph;
+    const vus = new Set<string>();
+    let doublons = 0;
+    for (let i = 0; i < g.n; i++) {
+      const k = `${Math.round(g.lat[i] * 1e5)},${Math.round(g.lon[i] * 1e5)}`;
+      if (vus.has(k)) doublons++;
+      vus.add(k);
+    }
+    // Quelques nœuds distincts peuvent partager une position (pont au-dessus
+    // d'une route) ; un recollage raté en donnerait des milliers.
+    expect(doublons / g.n).toBeLessThan(0.01);
+  });
+
+  it('le graphe chargé est presque entièrement connexe, altitudes plausibles', async () => {
+    const g = (await store.graphFor(45.8992, 6.1294, 20))!.graph;
     const vu = new Uint8Array(g.n);
-    const pile = [0];
-    vu[0] = 1;
-    let n = 1;
-    while (pile.length) {
-      const u = pile.pop()!;
-      for (let k = g.adjStart[u]; k < g.adjStart[u + 1]; k++) {
-        const v = g.adjTo[k];
-        if (!vu[v]) {
-          vu[v] = 1;
-          n++;
-          pile.push(v);
+    let max = 0;
+    for (let s = 0; s < g.n; s++) {
+      if (vu[s]) continue;
+      vu[s] = 1;
+      const pile = [s];
+      let n = 1;
+      while (pile.length) {
+        const u = pile.pop()!;
+        for (let k = g.adjStart[u]; k < g.adjStart[u + 1]; k++) {
+          const v = g.adjTo[k];
+          if (!vu[v]) {
+            vu[v] = 1;
+            n++;
+            pile.push(v);
+          }
         }
       }
+      max = Math.max(max, n);
     }
-    expect(n).toBe(g.n);
+    // Le bord des tuiles chargées peut isoler quelques morceaux de réseau.
+    expect(max / g.n).toBeGreaterThan(0.97);
     const z = [...g.ele];
     expect(Math.min(...z)).toBeGreaterThan(250);
     expect(Math.max(...z)).toBeLessThan(2500);
   });
 
-  it('trouve une boucle de 10 km / 300 m depuis Annecy', () => {
+  it('trouve une boucle de 10 km / 300 m depuis Annecy', async () => {
+    const g = (await store.graphFor(45.8992, 6.1294, 10))!.graph;
     const r = new LoopGenerator(g).generate({ lat: 45.8992, lon: 6.1294, distanceKm: 10, dplusM: 300, terrain: 'mixte' });
     expect(r.ok).toBe(true);
     for (const l of r.loops) verifierBoucle(g, l);
+  });
+
+  it('hors des régions : pas de graphe', async () => {
+    expect(await store.graphFor(45.764, 4.8357, 10)).toBeNull();
   });
 });

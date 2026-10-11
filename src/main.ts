@@ -3,7 +3,10 @@ import 'leaflet/dist/leaflet.css';
 import './style.css';
 import { toGpx } from './core/gpx';
 import type { Loop, LoopResponse } from './core/loops';
-import type { Terrain, ZoneDoc } from './core/graph';
+import type { Terrain } from './core/graph';
+import type { Manifest, RegionMeta } from './core/tiles';
+
+type Reponse = LoopResponse & { chargement?: { region: string; tuiles: number; ms: number } };
 
 const COULEURS = ['#2563eb', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -47,19 +50,24 @@ map.on('click', (e: L.LeafletMouseEvent) => placerDepart(e.latlng));
 worker.onmessage = (ev: MessageEvent) => {
   const msg = ev.data;
   if (msg.type === 'loaded') {
-    const meta = msg.info.meta as ZoneDoc['meta'];
-    const [lat, lon] = meta.center;
-    map.setView([lat, lon], 12);
-    L.circle([lat, lon], { radius: meta.radiusKm * 1000, color: '#57534e', weight: 1, fill: false, dashArray: '4 6', interactive: false }).addTo(map);
-    placerDepart(L.latLng(lat, lon));
-    $('zone-info').textContent = `Zone : ${meta.zone}, ${meta.radiusKm} km autour du centre`;
+    regions = (msg.manifest as Manifest).regions;
+    for (const r of regions) {
+      const [x0, y0, x1, y1] = r.bbox;
+      L.rectangle([[y0, x0], [y1, x1]], { color: '#57534e', weight: 1, fill: false, dashArray: '4 6', interactive: false }).addTo(map);
+      const opt = document.createElement('option');
+      opt.value = r.id;
+      opt.textContent = r.name;
+      selectRegion.appendChild(opt);
+    }
+    choisirRegion(regions[0].id);
+    $('zone-info').textContent = `Régions couvertes : ${regions.map((r) => r.name).join(', ')}`;
     $('credits').innerHTML =
-      `Réseau : ${meta.reseau}.<br>Altitude : ${meta.mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
+      `Réseau : ${regions[0].reseau}.<br>Altitude : ${regions[0].mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
     go.disabled = false;
     setStatus('');
   } else if (msg.type === 'result') {
     if (msg.id !== idReq) return; // réponse d'une demande remplacée
-    afficher(msg.res as LoopResponse);
+    afficher(msg.res as Reponse);
     go.disabled = false;
   } else if (msg.type === 'error') {
     setStatus(msg.message, true);
@@ -67,8 +75,21 @@ worker.onmessage = (ev: MessageEvent) => {
   }
 };
 
-const dataUrl = new URL(`${import.meta.env.BASE_URL}data/zone.json.gz`, location.href).href;
-worker.postMessage({ type: 'load', url: dataUrl });
+const base = new URL(`${import.meta.env.BASE_URL}data/`, location.href).href;
+worker.postMessage({ type: 'load', base });
+
+let regions: RegionMeta[] = [];
+const selectRegion = $<HTMLSelectElement>('region');
+selectRegion.addEventListener('change', () => choisirRegion(selectRegion.value));
+
+function choisirRegion(id: string) {
+  const r = regions.find((x) => x.id === id);
+  if (!r) return;
+  selectRegion.value = id;
+  const [x0, y0, x1, y1] = r.bbox;
+  map.fitBounds([[y0, x0], [y1, x1]]);
+  placerDepart(L.latLng(r.center[0], r.center[1]));
+}
 setStatus('Chargement du réseau de chemins…');
 
 form.addEventListener('submit', (e) => {
@@ -90,13 +111,15 @@ function pct(x: number) {
   return `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(0)} %`;
 }
 
-function afficher(res: LoopResponse) {
+function afficher(res: Reponse) {
   calques.clearLayers();
   results.replaceChildren();
   lignes = [];
   boucles = res.loops;
   profileBox.hidden = true;
-  setStatus(`${res.message} (${(res.stats.ms / 1000).toFixed(1)} s)`, !res.ok);
+  const ch = res.chargement;
+  const duree = ((res.stats.ms + (ch?.ms ?? 0)) / 1000).toFixed(1);
+  setStatus(`${res.message} (${duree} s${ch ? `, ${ch.tuiles} tuile${ch.tuiles > 1 ? 's' : ''}` : ''})`, !res.ok);
   if (res.loops.length === 0) return;
 
   res.loops.forEach((loop, i) => {
