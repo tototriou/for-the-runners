@@ -165,7 +165,11 @@ function afficher(res: Reponse) {
       <span class="gaps">
         <span class="${Math.abs(loop.ecartDistance) <= 0.05 ? 'ok' : 'ko'}">dist. ${pct(loop.ecartDistance)}</span> ·
         <span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·
-        aller-retour ${(loop.allerRetour * 100).toFixed(0)} %
+        aller-retour ${(loop.allerRetour * 100).toFixed(0)} %${
+          loop.grandesRoutesM >= 100
+            ? ` · <span class="${loop.grandesRoutesM >= 1000 ? 'ko' : ''}">${(loop.grandesRoutesM / 1000).toFixed(1).replace('.', ',')} km sur grande route</span>`
+            : ''
+        }
       </span>`;
     const bouton = document.createElement('button');
     bouton.className = 'gpx';
