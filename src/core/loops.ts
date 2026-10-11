@@ -8,7 +8,9 @@
 // 4. Score = |écart distance|/5 % + |écart D+|/15 % + allers-retours/15 %.
 // 5. ~35 variantes autour des 9 meilleures, puis 5 boucles différentes
 //    (Jaccard des arêtes < 0,5).
-// 6. Rien dans la tolérance : la plus proche, avec un message explicite.
+// 6. Rien dans la tolérance : autres départs à moins de 2 km (le plus haut
+//    ou le plus bas alentour, puis un cercle de 1,5 km) ; sinon la boucle la
+//    plus proche, avec un message explicite.
 
 import { distanceToNode, nearestNode, TYPE_SENTIER, type Graph, type Terrain } from './graph';
 import { Router } from './router';
@@ -24,6 +26,8 @@ export interface LoopRequest {
   dplusM: number;
   terrain: Terrain;
   seed?: number;
+  /** Chercher un autre départ à moins de 2 km si rien n'est possible (défaut : oui). */
+  elargir?: boolean;
 }
 
 export interface Loop {
@@ -50,6 +54,8 @@ export interface LoopResponse {
   message: string;
   startNode: number;
   stats: { candidates: number; routes: number; travail?: number; ms: number };
+  /** Présent si le départ a été déplacé faute de boucle depuis le point demandé. */
+  depart?: { lat: number; lon: number; decalageM: number };
 }
 
 interface Params {
@@ -84,6 +90,11 @@ const TOURS_SUPPLEMENTAIRES = 2;
 // sont toujours construites.
 const BUDGET_TRAVAIL = 8_000_000;
 const MIN_CANDIDATS = 10;
+// Repli quand rien n'est possible depuis le point demandé : départs essayés
+// entre 300 m et 2 km, avec un budget de travail en plus du premier.
+const ELARGISSEMENT_MIN_M = 300;
+const ELARGISSEMENT_MAX_M = 2000;
+const BUDGET_ELARGISSEMENT = 6_000_000;
 // A* pondéré : l'heuristique exacte (minorée par le plus petit facteur de
 // coût, 0,2 quand le relief est attiré) n'élague presque rien et coûtait
 // jusqu'à 20 s sur le réseau dense de Paris. Le coût n'est lui-même qu'une
@@ -123,8 +134,9 @@ export class LoopGenerator {
   travail = 0;
 
   /** Budget de travail épuisé : on ne lance plus de nouvelle candidate. */
+  private budget = BUDGET_TRAVAIL;
   private epuise() {
-    return this.travail > BUDGET_TRAVAIL;
+    return this.travail > this.budget;
   }
 
   constructor(private g: Graph) {
@@ -220,29 +232,16 @@ export class LoopGenerator {
     return best;
   }
 
-  generate(req: LoopRequest): LoopResponse {
-    const t0 = now();
-    const g = this.g;
-    this.routes = 0;
-    this.travail = 0;
-    const vide = (message: string, startNode = -1): LoopResponse => ({
-      ok: false, loops: [], message, startNode,
-      stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },
-    });
-
-    if (!(req.distanceKm > 0) || !(req.dplusM >= 0)) return vide('Distance et D+ doivent être positifs.');
-    const start = nearestNode(g, req.lat, req.lon);
-    if (start < 0 || distanceToNode(g, req.lat, req.lon, start) > 300) {
-      return vide('Point de départ trop loin d’un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
-    }
-    const target = { d: req.distanceKm * 1000, h: Math.max(req.dplusM, 1) };
-    const rand = rng(req.seed ?? 12345);
+  /**
+   * Étapes 1 à 5 depuis un départ : candidates, ajustement du rayon,
+   * variantes autour des meilleures. Renvoie les candidates triées par score.
+   */
+  private rechercher(start: number, terrain: Terrain, target: { d: number; h: number }, rand: () => number,
+    nCandidats: number, tours: number, nVariantes: number): Candidate[] {
     const theta0 = rand() * 2 * Math.PI;
     const r0 = target.d / (2 * Math.PI * DETOUR);
-
-    // 1-4. Candidates initiales.
     const cands: Candidate[] = [];
-    for (let i = 0; i < N_CANDIDATS; i++) {
+    for (let i = 0; i < nCandidats; i++) {
       const p: Params = {
         theta: theta0 + i * ANGLE_OR,
         k: rand() < 0.5 ? 2 : 3,
@@ -251,21 +250,18 @@ export class LoopGenerator {
         mode: MODES[Math.floor(rand() * MODES.length)],
       };
       if (i >= MIN_CANDIDATS && this.epuise()) break;
-      const c = this.buildAdjusted(start, p, req.terrain, target, ITER_RAYON);
+      const c = this.buildAdjusted(start, p, terrain, target, ITER_RAYON);
       if (c) cands.push(c);
     }
-    if (cands.length === 0) return vide('Aucune boucle n’a pu être tracée depuis ce point.', start);
-
-    // 5. Variantes autour des meilleures. Les tours supplémentaires ne
-    // servent que si rien n'est encore dans la tolérance.
-    for (let tour = 0; tour < 1 + TOURS_SUPPLEMENTAIRES; tour++) {
+    // Les tours supplémentaires ne servent que si rien n'est encore dans la tolérance.
+    for (let tour = 0; tour < tours && cands.length > 0; tour++) {
       cands.sort((x, y) => x.score - y.score);
       if (tour > 0 && cands.some((c) => dansTolerance(c, target))) break;
       const parents = cands.slice(0, N_PARENTS);
-      const parVariante = Math.ceil(N_VARIANTES / parents.length);
+      const parVariante = Math.ceil(nVariantes / parents.length);
       let nVar = 0;
       for (const par of parents) {
-        for (let v = 0; v < parVariante && nVar < N_VARIANTES && !this.epuise(); v++, nVar++) {
+        for (let v = 0; v < parVariante && nVar < nVariantes && !this.epuise(); v++, nVar++) {
           const errH = Math.log(Math.max(target.h, 10) / Math.max(par.dplusM, 10));
           const pas = Math.max(-1.6, Math.min(1.6, errH * 1.8));
           const p: Params = {
@@ -275,14 +271,88 @@ export class LoopGenerator {
             radius: par.p.radius * (target.d / par.distanceM),
             mode: v === 3 ? (errH > 0.1 ? 1 : errH < -0.1 ? -1 : 0) : par.p.mode,
           };
-          const c = this.buildAdjusted(start, p, req.terrain, target, 3);
+          const c = this.buildAdjusted(start, p, terrain, target, 3);
           if (c) cands.push(c);
         }
       }
     }
+    cands.sort((x, y) => x.score - y.score);
+    return cands;
+  }
+
+  /**
+   * Départs de repli à moins de ELARGISSEMENT_MAX_M du départ demandé, du
+   * plus prometteur au moins prometteur : le point le plus haut (ou le plus
+   * bas, s'il faut moins de D+) dans 2 km puis dans 1 km, puis des points
+   * répartis sur un cercle de 1,5 km.
+   */
+  private departsAlternatifs(start: number, plusDeDplus: boolean): number[] {
+    const g = this.g;
+    const x = g.x[start];
+    const y = g.y[start];
+    const signe = plusDeDplus ? 1 : -1;
+    const out: number[] = [];
+    const ajouter = (n: number) => {
+      if (n < 0 || out.includes(n) || n === start) return;
+      const d = Math.hypot(g.x[n] - x, g.y[n] - y);
+      if (d >= ELARGISSEMENT_MIN_M && d <= ELARGISSEMENT_MAX_M) out.push(n);
+    };
+    ajouter(g.grid.extreme(x, y, ELARGISSEMENT_MAX_M, g.ele, signe));
+    ajouter(g.grid.extreme(x, y, ELARGISSEMENT_MAX_M / 2, g.ele, signe));
+    for (let k = 0; k < 6; k++) {
+      const a = (k * Math.PI) / 3;
+      ajouter(g.grid.nearest(x + 1500 * Math.cos(a), y + 1500 * Math.sin(a)));
+    }
+    return out;
+  }
+
+  generate(req: LoopRequest): LoopResponse {
+    const t0 = now();
+    const g = this.g;
+    this.routes = 0;
+    this.travail = 0;
+    this.budget = BUDGET_TRAVAIL;
+    const vide = (message: string, startNode = -1): LoopResponse => ({
+      ok: false, loops: [], message, startNode,
+      stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },
+    });
+
+    if (!(req.distanceKm > 0) || !(req.dplusM >= 0)) return vide('Distance et D+ doivent être positifs.');
+    const demande = nearestNode(g, req.lat, req.lon);
+    if (demande < 0 || distanceToNode(g, req.lat, req.lon, demande) > 300) {
+      return vide('Point de départ trop loin d\u2019un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
+    }
+    const target = { d: req.distanceKm * 1000, h: Math.max(req.dplusM, 1) };
+    const rand = rng(req.seed ?? 12345);
+
+    let start = demande;
+    let cands = this.rechercher(start, req.terrain, target, rand, N_CANDIDATS, 1 + TOURS_SUPPLEMENTAIRES, N_VARIANTES);
+    if (cands.length === 0) return vide('Aucune boucle n\u2019a pu être tracée depuis ce point.', start);
+
+    // 6. Rien dans la tolérance : essayer d'autres départs à moins de 2 km,
+    // avec une recherche allégée et un budget de travail supplémentaire.
+    let decale = false;
+    if (req.elargir !== false && !cands.some((c) => dansTolerance(c, target))) {
+      this.budget += BUDGET_ELARGISSEMENT;
+      const nOk = (cs: Candidate[]) => cs.filter((c) => dansTolerance(c, target)).length;
+      let meilleur = { start, cands, ok: 0 };
+      for (const alt of this.departsAlternatifs(start, cands[0].dplusM < target.h)) {
+        if (this.epuise()) break;
+        const cs = this.rechercher(alt, req.terrain, target, rand, 16, 1, 12);
+        if (cs.length === 0) continue;
+        const ok = nOk(cs);
+        if (ok > meilleur.ok) meilleur = { start: alt, cands: cs, ok };
+        if (ok >= 3) break;
+      }
+      // On ne déplace le départ que si cela donne une boucle dans la tolérance.
+      if (meilleur.ok > 0) {
+        start = meilleur.start;
+        cands = meilleur.cands;
+        decale = true;
+      }
+    }
 
     // Choix final : les meilleures, assez différentes entre elles.
-    cands.sort((x, y) => x.score - y.score);
     const choisies: { c: Candidate; set: Set<number> }[] = [];
     for (const c of cands) {
       const set = new Set(c.edges);
@@ -298,16 +368,34 @@ export class LoopGenerator {
       return {
         ok: false, loops, startNode: start, stats,
         message:
-          `Aucune boucle ne respecte à la fois ±5 % de distance et ±15 % de D+ depuis ce départ. ` +
+          `Aucune boucle ne respecte à la fois ±5 % de distance et ±15 % de D+, ` +
+          `ni depuis ce départ ni depuis un départ à moins de 2 km. ` +
           `La plus proche fait ${(b.distanceM / 1000).toFixed(1)} km (${pct(b.ecartDistance)}) ` +
           `pour ${Math.round(b.dplusM)} m D+ (${pct(b.ecartDplus)}).`,
       };
     }
-    return {
-      ok: true, loops, startNode: start, stats,
-      message: `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`,
-    };
+    const resume = `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`;
+    if (decale) {
+      const dx = g.x[start] - g.x[demande];
+      const dy = g.y[start] - g.y[demande];
+      const decalageM = Math.hypot(dx, dy);
+      return {
+        ok: true, loops, startNode: start, stats,
+        depart: { lat: g.lat[start], lon: g.lon[start], decalageM },
+        message:
+          `Impossible depuis ton point de départ. En partant à ${(decalageM / 1000).toFixed(1).replace('.', ',')} km ` +
+          `${direction(dx, dy)} (départ orange sur la carte) : ${resume}`,
+      };
+    }
+    return { ok: true, loops, startNode: start, stats, message: resume };
   }
+}
+
+/** Direction cardinale d'un déplacement (x vers l'est, y vers le nord). */
+function direction(dx: number, dy: number) {
+  const noms = ['à l\u2019est', 'au nord-est', 'au nord', 'au nord-ouest', 'à l\u2019ouest', 'au sud-ouest', 'au sud', 'au sud-est'];
+  const k = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  return noms[(k + 8) % 8];
 }
 
 function now() {

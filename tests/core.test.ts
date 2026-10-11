@@ -115,6 +115,23 @@ describe('LoopGenerator (grille synthétique)', () => {
     expect(r.message).toMatch(/Aucune boucle/);
   });
 
+  it('cible impossible depuis le point, possible à moins de 2 km : départ décalé', () => {
+    // Coin sud-ouest de la grille, plat ; la colline est à ~1,3 km au nord-est.
+    const lat = 45.9 - 600 / 111200;
+    const lon = 6.13 - 600 / (Math.cos((45.9 * Math.PI) / 180) * 111320);
+    const r = gen.generate({ lat, lon, distanceKm: 2.5, dplusM: 150, terrain: 'mixte' });
+    expect(r.ok).toBe(true);
+    expect(r.depart).toBeDefined();
+    expect(r.depart!.decalageM).toBeLessThanOrEqual(2000);
+    expect(r.message).toMatch(/Impossible depuis ton point de départ/);
+    for (const l of r.loops) {
+      verifierBoucle(g, l);
+      expect(l.coords[0][0]).toBeCloseTo(r.depart!.lat, 5);
+    }
+    // Sans élargissement, la même demande échoue : le décalage était nécessaire.
+    expect(gen.generate({ lat, lon, distanceKm: 2.5, dplusM: 150, terrain: 'mixte', elargir: false }).ok).toBe(false);
+  });
+
   it('départ hors réseau : message, pas d’exception', () => {
     const r = gen.generate({ lat: 46.5, lon: 6.13, distanceKm: 5, dplusM: 100, terrain: 'mixte' });
     expect(r.ok).toBe(false);
