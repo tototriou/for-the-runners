@@ -8,5 +8,5 @@
 6. Les cas de test de Colmar visaient le relief vosgien (10 à 40 m/km), qui commence à 6 km de la ville : plage corrigée en 3 à 12 m/km (plaine) après une première mesure. Les échecs restants de Strasbourg et Paris viennent des altitudes SRTM et restent visibles.
 7. Le temps sur téléphone n'est pas mesuré. Le budget de travail (8 millions de nœuds, 14 avec le décalage) vise moins de 10 s, à vérifier en vrai.
 8. Données : 1,5 Mo (Annecy), 27 Mo (Alsace), 21 Mo (Île-de-France). L'app ne charge que les tuiles autour du départ, mais les tuiles de Paris pèsent jusqu'à 2 Mo.
-9. Zone (cercle ou dessinée), avec D+ visé : 9 cas sur 9 dans la tolérance, 100 % dans la zone quand le départ y est (71 % depuis l'extérieur, le reste étant l'accès). Mode D+ maximal : 8 cas sur 8 tiennent la distance, zone respectée, de +4 à +94 % de D+ par rapport au mode normal sans zone. Un départ hors zone paie l'accès dans la distance.
+9. Zone (cercle ou dessinée), avec D+ visé : 9 cas sur 9 dans la tolérance, 100 % dans la zone quand le départ y est (71 % depuis l'extérieur, le reste étant l'accès).
 10. Suites : test terrain, mesure sur téléphone, régénération avec l'IGN, indication de faisabilité avant le calcul.

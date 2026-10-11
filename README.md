@@ -28,17 +28,13 @@ ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
 « Essayer N m de D+ »).
 
-**Zone.** Dans les deux objectifs, tu peux choisir une zone : un cercle
-autour du départ (rayon à choisir) ou une zone dessinée en touchant la
-carte (une forêt, un parc, un massif). La boucle reste le plus possible
-dedans : elle n'en sort que pour y entrer, depuis un départ extérieur ou
-sur les 300 premiers mètres. Chaque boucle indique sa part dans la zone.
-
-**Objectif « D+ maximal ».** Au lieu d'un D+ visé, l'app cherche la boucle
-la plus dénivelée à la distance demandée (±5 %), dans la zone (par défaut,
-un cercle d'un quart de la distance). Elle enchaîne montées et descentes en
-préférant monter par une rue et redescendre par la voisine ; la case
-« Autoriser les allers-retours » permet de répéter la même côte.
+**Zone.** Tu peux choisir une zone : un cercle autour du départ (rayon à
+choisir) ou une zone dessinée en touchant la carte (une forêt, un parc, un
+massif). La boucle reste le plus possible dedans : elle n'en sort que pour
+y entrer, depuis un départ extérieur ou sur les 300 premiers mètres. Chaque
+boucle indique sa part dans la zone. Dans une zone, la case « Autoriser les
+allers-retours » permet de répéter la même côte ; sinon, la boucle monte
+par une rue et redescend par la voisine.
 
 Un lien peut fixer le départ : `…/for-the-runners/?depart=45.942,6.115`.
 
@@ -122,7 +118,7 @@ base à changer).
 | `src/core/graph.ts` | Décodage du graphe, adjacence, index spatial |
 | `src/core/router.ts` | A* à coût paramétrable (relief, terrain, tronçons déjà pris) |
 | `src/core/loops.ts` | Générateur de boucles : candidates, ajustement du rayon, score, variantes, diversité |
-| `src/core/zone.ts` | Boucles dans une zone : D+ visé ou maximal, montées et descentes enchaînées |
+| `src/core/zone.ts` | Boucles dans une zone : montées et descentes enchaînées vers le D+ visé |
 | `src/core/tiles.ts` | Choix des tuiles autour du départ, cache, fusion en un graphe |
 | `src/core/gpx.ts` | Export GPX 1.1 |
 | `src/worker.ts`, `src/main.ts` | Web Worker et interface (Leaflet) |
