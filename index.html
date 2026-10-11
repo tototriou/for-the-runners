@@ -33,11 +33,12 @@
               <input id="dplus" type="number" inputmode="numeric" min="0" max="4000" step="10" value="400" required />
             </label>
           </div>
-          <fieldset id="zone-box" hidden>
+          <fieldset id="zone-box">
             <legend>Zone</legend>
             <div class="row">
               <label>Forme
                 <select id="zone-type">
+                  <option value="aucune">Aucune</option>
                   <option value="cercle">Cercle autour du départ</option>
                   <option value="polygone">Zone dessinée</option>
                 </select>
@@ -50,7 +51,7 @@
               <button id="dessiner" type="button" class="secondaire">Dessiner la zone</button>
               <button id="effacer" type="button" class="secondaire">Effacer</button>
             </div>
-            <label class="case"><input id="allers-retours" type="checkbox" /> Autoriser les allers-retours (côte répétée)</label>
+            <label class="case" id="allers-retours-label"><input id="allers-retours" type="checkbox" /> Autoriser les allers-retours (côte répétée)</label>
           </fieldset>
           <label>Terrain
             <select id="terrain">

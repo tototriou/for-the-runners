@@ -2,14 +2,14 @@
 // autour du départ, et génère les boucles sans figer la page.
 
 import type { Graph } from './core/graph';
-import { DplusMaxGenerator, rayonZoneM, type DplusMaxRequest } from './core/dplusmax';
+import { ZoneGenerator, rayonZoneM, type ZoneRequest } from './core/zone';
 import { LoopGenerator, type LoopRequest, type LoopResponse } from './core/loops';
 import { TileStore, type Manifest, type TileDoc } from './core/tiles';
 
 let base = '';
 let store: TileStore | null = null;
 let gen: { graph: Graph; g: LoopGenerator } | null = null;
-let genMax: { graph: Graph; g: DplusMaxGenerator } | null = null;
+let genZone: { graph: Graph; g: ZoneGenerator } | null = null;
 
 async function lireJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -41,7 +41,7 @@ async function generer(req: LoopRequest): Promise<LoopResponse & { chargement?: 
   return { ...res, chargement: { region: r.region.name, tuiles: r.tiles.length, ms } };
 }
 
-async function genererMax(req: DplusMaxRequest) {
+async function genererZone(req: ZoneRequest) {
   if (!store) throw new Error('Données pas encore chargées');
   const t0 = performance.now();
   const r = await store.graphFor(req.lat, req.lon, req.distanceKm, rayonZoneM(req.lat, req.lon, req.distanceKm, req.zone));
@@ -49,16 +49,16 @@ async function genererMax(req: DplusMaxRequest) {
     const noms = store.manifest.regions.map((x) => x.name).join(', ');
     return { ok: false, loops: [], startNode: -1, stats: { candidates: 0, routes: 0, ms: 0 }, message: `Ce départ est hors des régions couvertes (${noms}).` };
   }
-  if (!genMax || genMax.graph !== r.graph) genMax = { graph: r.graph, g: new DplusMaxGenerator(r.graph) };
+  if (!genZone || genZone.graph !== r.graph) genZone = { graph: r.graph, g: new ZoneGenerator(r.graph) };
   const ms = performance.now() - t0;
-  return { ...genMax.g.generate(req), chargement: { region: r.region.name, tuiles: r.tiles.length, ms } };
+  return { ...genZone.g.generate(req), chargement: { region: r.region.name, tuiles: r.tiles.length, ms } };
 }
 
 self.onmessage = async (ev: MessageEvent) => {
   const msg = ev.data as
     | { type: 'load'; base: string }
     | { type: 'generate'; id: number; req: LoopRequest }
-    | { type: 'generateMax'; id: number; req: DplusMaxRequest };
+    | { type: 'generateZone'; id: number; req: ZoneRequest };
   try {
     if (msg.type === 'load') {
       base = msg.base;
@@ -68,9 +68,9 @@ self.onmessage = async (ev: MessageEvent) => {
     } else if (msg.type === 'generate') {
       const res = await generer(msg.req);
       self.postMessage({ type: 'result', id: msg.id, res });
-    } else if (msg.type === 'generateMax') {
-      const res = await genererMax(msg.req);
-      self.postMessage({ type: 'result', id: msg.id, res, max: true });
+    } else if (msg.type === 'generateZone') {
+      const res = await genererZone(msg.req);
+      self.postMessage({ type: 'result', id: msg.id, res });
     }
   } catch (e) {
     self.postMessage({ type: 'error', id: 'id' in msg ? msg.id : -1, message: e instanceof Error ? e.message : String(e) });

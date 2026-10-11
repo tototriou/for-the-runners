@@ -5,7 +5,7 @@ import { toGpx } from './core/gpx';
 import type { Loop, LoopResponse } from './core/loops';
 import type { Terrain } from './core/graph';
 import type { Manifest, RegionMeta } from './core/tiles';
-import type { Zone } from './core/dplusmax';
+import type { Zone } from './core/zone';
 
 type Reponse = LoopResponse & { chargement?: { region: string; tuiles: number; ms: number } };
 
@@ -74,16 +74,19 @@ map.on('click', (e: L.LeafletMouseEvent) => {
 
 const modeMax = () => objectif.value === 'max';
 
+// Zone choisie : la boucle y reste le plus possible. En D+ maximal, sans
+// zone, le générateur prend un cercle d'un quart de la distance.
+const zoneActive = () => zoneType.value !== 'aucune';
+
 function majFormulaire() {
   const max = modeMax();
   $('dplus-label').hidden = max;
   dplusInput.required = !max;
   dplusInput.disabled = max;
-  zoneBox.hidden = !max;
-  const cercle = zoneType.value === 'cercle';
-  $('rayon-label').hidden = !cercle;
-  dessinBox.hidden = cercle;
-  if (!max || cercle) arreterDessin();
+  $('rayon-label').hidden = zoneType.value !== 'cercle';
+  dessinBox.hidden = zoneType.value !== 'polygone';
+  $('allers-retours-label').hidden = !max && !zoneActive();
+  if (zoneType.value !== 'polygone') arreterDessin();
   majZone();
 }
 
@@ -96,7 +99,6 @@ function arreterDessin() {
 
 function majZone() {
   calqueZone.clearLayers();
-  if (!modeMax()) return;
   const style = { color: '#15803d', weight: 2, dashArray: '6 6', fillOpacity: 0.06, interactive: false };
   if (zoneType.value === 'cercle') {
     if (depart) L.circle(depart, { ...style, radius: Number(rayonInput.value) * 1000 }).addTo(calqueZone);
@@ -131,6 +133,7 @@ $<HTMLButtonElement>('effacer').addEventListener('click', () => {
   majZone();
   if (!dessin) arreterDessin();
 });
+majFormulaire();
 
 worker.onmessage = (ev: MessageEvent) => {
   const msg = ev.data;
@@ -197,21 +200,24 @@ form.addEventListener('submit', (e) => {
   const terrain = $<HTMLSelectElement>('terrain').value as Terrain;
   essayer.hidden = true;
   dernierModeMax = modeMax();
-  if (dernierModeMax) {
-    let zone: Zone;
+  if (dernierModeMax || zoneActive()) {
+    let zone: Zone | null = null;
     if (zoneType.value === 'cercle') {
       zone = { kind: 'cercle', rayonM: Number(rayonInput.value) * 1000 };
-    } else {
+    } else if (zoneType.value === 'polygone') {
       if (pointsZone.length < 3) return setStatus('Dessine d\u2019abord la zone : au moins 3 points sur la carte.', true);
       arreterDessin();
       zone = { kind: 'polygone', points: pointsZone.map((p) => [p.lat, p.lng]) };
     }
     go.disabled = true;
-    setStatus('Recherche du D+ maximal…');
+    setStatus(dernierModeMax ? 'Recherche du D+ maximal…' : 'Calcul des boucles dans la zone…');
     worker.postMessage({
-      type: 'generateMax',
+      type: 'generateZone',
       id: ++idReq,
-      req: { lat: depart.lat, lon: depart.lng, distanceKm, terrain, zone, allersRetours: allersRetours.checked },
+      req: {
+        lat: depart.lat, lon: depart.lng, distanceKm, terrain, zone, allersRetours: allersRetours.checked,
+        dplusM: dernierModeMax ? undefined : dplusM,
+      },
     });
     return;
   }
@@ -270,6 +276,8 @@ function afficher(res: Reponse) {
           ? `${Math.round(loop.dplusM / (loop.distanceM / 1000))} m/km`
           : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span>`} ·
         aller-retour ${(loop.allerRetour * 100).toFixed(0)} %${
+          loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
+        }${
           loop.grandesRoutesM >= 100
             ? ` · <span class="${loop.grandesRoutesM >= 1000 ? 'ko' : ''}">${(loop.grandesRoutesM / 1000).toFixed(1).replace('.', ',')} km sur grande route</span>`
             : ''
