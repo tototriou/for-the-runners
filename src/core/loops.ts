@@ -49,7 +49,7 @@ export interface LoopResponse {
   loops: Loop[];
   message: string;
   startNode: number;
-  stats: { candidates: number; routes: number; ms: number };
+  stats: { candidates: number; routes: number; travail?: number; ms: number };
 }
 
 interface Params {
@@ -76,6 +76,14 @@ const N_PARENTS = 9;
 const N_VARIANTES = 35;
 const ITER_RAYON = 4;
 const TOURS_SUPPLEMENTAIRES = 2;
+// Budget de travail par demande, en nœuds explorés par A* (déterministe,
+// contrairement à un chronomètre) : ~2 s en Node, sous 10 s sur un
+// téléphone 3 à 4 fois plus lent. Mesuré sur les trois jeux du banc : seuls
+// les cas en plein Paris le dépassaient (jusqu'à 38 millions, 9,6 s en Node).
+// Une fois épuisé, plus de nouvelle candidate ; les MIN_CANDIDATS premières
+// sont toujours construites.
+const BUDGET_TRAVAIL = 8_000_000;
+const MIN_CANDIDATS = 10;
 // A* pondéré : l'heuristique exacte (minorée par le plus petit facteur de
 // coût, 0,2 quand le relief est attiré) n'élague presque rien et coûtait
 // jusqu'à 20 s sur le réseau dense de Paris. Le coût n'est lui-même qu'une
@@ -111,6 +119,13 @@ export class LoopGenerator {
   private used: Uint16Array;
   private costCache = new Map<string, { cost: Float64Array; minFactor: number }>();
   routes = 0;
+  /** Nœuds explorés par A* depuis le début de la demande : mesure du travail. */
+  travail = 0;
+
+  /** Budget de travail épuisé : on ne lance plus de nouvelle candidate. */
+  private epuise() {
+    return this.travail > BUDGET_TRAVAIL;
+  }
 
   constructor(private g: Graph) {
     this.router = new Router(g);
@@ -171,6 +186,7 @@ export class LoopGenerator {
       if (pts[i] === pts[i + 1]) continue;
       this.routes++;
       const r = this.router.route(pts[i], pts[i + 1], cost, Math.max(minFactor, POIDS_HEURISTIQUE_MIN), used, PENALITE_REUSE);
+      this.travail += this.router.settled;
       if (!r) {
         ok = false;
         break;
@@ -208,9 +224,10 @@ export class LoopGenerator {
     const t0 = now();
     const g = this.g;
     this.routes = 0;
+    this.travail = 0;
     const vide = (message: string, startNode = -1): LoopResponse => ({
       ok: false, loops: [], message, startNode,
-      stats: { candidates: 0, routes: this.routes, ms: now() - t0 },
+      stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },
     });
 
     if (!(req.distanceKm > 0) || !(req.dplusM >= 0)) return vide('Distance et D+ doivent être positifs.');
@@ -233,6 +250,7 @@ export class LoopGenerator {
         radius: r0 * (0.85 + 0.3 * rand()),
         mode: MODES[Math.floor(rand() * MODES.length)],
       };
+      if (i >= MIN_CANDIDATS && this.epuise()) break;
       const c = this.buildAdjusted(start, p, req.terrain, target, ITER_RAYON);
       if (c) cands.push(c);
     }
@@ -247,7 +265,7 @@ export class LoopGenerator {
       const parVariante = Math.ceil(N_VARIANTES / parents.length);
       let nVar = 0;
       for (const par of parents) {
-        for (let v = 0; v < parVariante && nVar < N_VARIANTES; v++, nVar++) {
+        for (let v = 0; v < parVariante && nVar < N_VARIANTES && !this.epuise(); v++, nVar++) {
           const errH = Math.log(Math.max(target.h, 10) / Math.max(par.dplusM, 10));
           const pas = Math.max(-1.6, Math.min(1.6, errH * 1.8));
           const p: Params = {
@@ -273,7 +291,7 @@ export class LoopGenerator {
     }
     const loops = choisies.map(({ c }) => finaliser(g, c, target));
     const nOk = loops.filter((l) => l.dansTolerance).length;
-    const stats = { candidates: cands.length, routes: this.routes, ms: now() - t0 };
+    const stats = { candidates: cands.length, routes: this.routes, travail: this.travail, ms: now() - t0 };
 
     if (nOk === 0) {
       const b = loops[0];
