@@ -1,11 +1,9 @@
 // Boucles dans une zone (cercle autour du départ ou polygone dessiné) : la
 // boucle reste le plus possible dans la zone (elle n'en sort que pour y
-// entrer depuis un départ extérieur), avec deux objectifs :
-//  - D+ visé : la pente de chaque point est choisie pour viser le D+ restant ;
-//  - D+ maximal : la boucle la plus dénivelée à distance donnée.
+// entrer depuis un départ extérieur), à distance et D+ visés.
 //
-// Chaque candidate enchaîne des points hauts et des points bas de la zone :
-// monter à un sommet, redescendre dans un creux, remonter ailleurs. La
+// Chaque candidate enchaîne des points hauts et des points bas de la zone,
+// la pente de chaque étape visant le D+ restant à faire. La
 // pénalité de réutilisation fait monter par une rue et redescendre par la
 // voisine ; avec les allers-retours permis, elle est faible et la même côte
 // peut être répétée quand il n'y a pas d'autre choix. Le dernier point est
@@ -27,20 +25,19 @@ export interface ZoneRequest {
   lon: number;
   distanceKm: number;
   terrain: Terrain;
-  /** Absente : cercle d'un quart de la distance autour du départ. */
-  zone?: Zone | null;
-  /** D+ visé ; absent : D+ maximal. */
-  dplusM?: number;
+  zone: Zone;
+  dplusM: number;
   /** Répéter la même côte (aller-retour) est permis. */
   allersRetours?: boolean;
   seed?: number;
 }
 
-// 80 → 400 candidates : +10 à +20 % de D+ sur Annecy, Montmartre et Meudon,
-// pour moins de 0,6 s ; le budget de travail borne les zones denses.
+// Moins de 1,3 s sur les cas du banc ; le budget de travail borne les
+// zones denses.
 const N_CANDIDATS = 400;
-const BETAS = [1.5, 3];
-const BETAS_CIBLE = [-1.5, 0, 1.5, 3];
+// Du relief évité au relief attiré : la pente visée choisit les points, le
+// coût varie la façon de les relier.
+const BETAS = [-1.5, 0, 1.5, 3];
 // Points hauts et bas : les nœuds de la zone dans les premiers et derniers
 // POOL_PART de l'altitude (au moins POOL_MIN).
 const POOL_PART = 0.08;
@@ -56,31 +53,8 @@ const ACCES_M = 300;
 const MAX_ETAPES = 40;
 const ECHANTILLON_ETAPE = 60;
 
-/**
- * Prochain point : tiré au hasard, avec un poids qui croît avec la pente
- * à vol d'oiseau dans le bon sens (dénivelé ÷ distance), au carré pour
- * privilégier nettement les côtes raides et proches.
- */
-function choisirPente(options: number[], cur: number, versHaut: boolean, g: Graph,
-  dist: (a: number, b: number) => number, rand: () => number): number {
-  const poids = options.map((n) => {
-    const dz = (g.ele[n] - g.ele[cur]) * (versHaut ? 1 : -1);
-    return dz > 0 ? (dz / Math.max(dist(cur, n), 200)) ** 2 : 0;
-  });
-  const total = poids.reduce((a, b) => a + b, 0);
-  if (total === 0) return options[Math.floor(rand() * options.length)];
-  let x = rand() * total;
-  for (let k = 0; k < options.length; k++) if ((x -= poids[k]) <= 0) return options[k];
-  return options[options.length - 1];
-}
-
-export function zoneParDefaut(distanceKm: number): Zone {
-  return { kind: 'cercle', rayonM: (distanceKm * 1000) / 4 };
-}
-
 /** Rayon de réseau à charger pour couvrir la zone depuis le départ. */
-export function rayonZoneM(lat: number, lon: number, distanceKm: number, zone?: Zone | null): number {
-  const z = zone ?? zoneParDefaut(distanceKm);
+export function rayonZoneM(lat: number, lon: number, z: Zone): number {
   if (z.kind === 'cercle') return z.rayonM + 500;
   const r = 6371008.8;
   let max = 0;
@@ -148,16 +122,15 @@ export class ZoneGenerator {
       return vide('Point de départ trop loin d’un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
     }
     const D = req.distanceKm * 1000;
-    const zone = req.zone ?? zoneParDefaut(req.distanceKm);
+    const zone = req.zone;
     if (zone.kind === 'polygone' && zone.points.length < 3) return vide('La zone dessinée doit avoir au moins 3 points.');
     const dedans = noeudsDansZone(g, start, zone);
     const departDedans = dedans[start] === 1;
 
     // Coûts : relief attiré, arêtes hors zone interdites (ou chères pour
     // l'accès si le départ est dehors).
-    // D+ visé : du relief évité au relief attiré, selon la pente demandée.
-    const cible = req.dplusM != null ? Math.max(req.dplusM, 1) : null;
-    const couts = (cible == null ? BETAS : BETAS_CIBLE).map((beta) => {
+    const cible = Math.max(req.dplusM, 1);
+    const couts = BETAS.map((beta) => {
       const { cost, minFactor } = coutsAretes(g, beta, req.terrain);
       const proche = (n: number) => (g.x[n] - g.x[start]) ** 2 + (g.y[n] - g.y[start]) ** 2 <= ACCES_M ** 2;
       for (let e = 0; e < g.m; e++) {
@@ -188,7 +161,6 @@ export class ZoneGenerator {
     const nPool = Math.min(zoneNoeuds.length >> 1, Math.max(POOL_MIN, Math.round(zoneNoeuds.length * POOL_PART)));
     const bas = zoneNoeuds.slice(0, nPool);
     const hauts = zoneNoeuds.slice(-nPool);
-    const denivZone = g.ele[hauts[hauts.length - 1]] - g.ele[bas[0]];
 
     const rand = rng(req.seed ?? 12345);
     const dist = (a: number, b: number) => Math.hypot(g.x[a] - g.x[b], g.y[a] - g.y[b]);
@@ -251,12 +223,10 @@ export class ZoneGenerator {
           if (best >= 0 && reste > retour * 1.1) aller(best);
           break;
         }
-        // D+ visé : la montée suivante vise la pente qu'il reste à faire
-        // (la moitié du chemin monte, l'autre descend).
-        const penteVisee = cible == null ? null : (2 * Math.max(0, cible - dplus)) / Math.max(reste, 1);
-        const prochain = penteVisee == null
-          ? choisirPente(possibles, cur, versHaut, g, dist, rand)
-          : choisirPenteVisee(possibles, cur, versHaut, penteVisee, g, dist, rand);
+        // La montée suivante vise la pente qu'il reste à faire (la moitié du
+        // chemin monte, l'autre descend).
+        const penteVisee = (2 * Math.max(0, cible - dplus)) / Math.max(reste, 1);
+        const prochain = choisirPenteVisee(possibles, cur, versHaut, penteVisee, g, dist, rand);
         if (!aller(prochain)) break;
         versHaut = !versHaut;
       }
@@ -266,18 +236,12 @@ export class ZoneGenerator {
       if (!req.allersRetours) couperDemiTours(g, edges, dirs, DEMI_TOUR_MIN_M);
       if (edges.length === 0) continue;
       const m = mesurer(g, edges, dirs);
-      const ecart = Math.abs(m.distanceM - D) / D;
-      // D+ maximal : dans la tolérance de distance, le plus de D+, ramené à
-      // la distance demandée (sinon les +5 % gagneraient toujours) ; hors
-      // tolérance, la plus proche. D+ visé : le score du mode normal.
-      const score = cible != null
-        ? scoreCible(m, { d: D, h: cible })
-        : ecart <= TOL_DISTANCE ? -m.dplusM * (D / m.distanceM) : 1e6 + ecart * 1e6;
+      const score = scoreCible(m, { d: D, h: cible });
       cands.push({ edges, dirs, ...m, score });
     }
 
     const dansTol = (c: { distanceM: number; dplusM: number }) =>
-      Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
+      Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS;
     cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || a.score - b.score);
     const choisies: { c: Cand; set: Set<number> }[] = [];
     for (const c of cands) {
@@ -289,7 +253,7 @@ export class ZoneGenerator {
     if (choisies.length === 0) return { ...vide('Aucune boucle n’a pu être tracée dans cette zone.'), stats, startNode: start };
 
     const loops: Loop[] = choisies.map(({ c }) => {
-      const l = finaliser(g, c, { d: D, h: cible ?? Math.max(1, c.dplusM) });
+      const l = finaliser(g, c, { d: D, h: cible });
       l.dansTolerance = dansTol(c);
       let dansZone = 0;
       for (const e of c.edges) if (dedans[g.a[e]] && dedans[g.b[e]]) dansZone += g.len[e];
@@ -297,31 +261,21 @@ export class ZoneGenerator {
       return l;
     });
     const nOk = loops.filter((l) => l.dansTolerance).length;
-    const zoneTxt = req.zone == null
-      ? `à moins de ${(zone.kind === 'cercle' ? zone.rayonM / 1000 : 0).toFixed(1).replace('.', ',')} km du départ`
-      : zone.kind === 'cercle' ? `à moins de ${(zone.rayonM / 1000).toFixed(1).replace('.', ',')} km du départ` : 'dans la zone dessinée';
+    const zoneTxt = zone.kind === 'cercle' ? `à moins de ${(zone.rayonM / 1000).toFixed(1).replace('.', ',')} km du départ` : 'dans la zone dessinée';
     const zonePct = `${Math.round(loops[0].partZone! * 100)} % dans la zone`;
     if (nOk === 0) {
       return {
         ok: false, loops, startNode: start, stats,
-        message: `Aucune boucle de ${req.distanceKm} km (±5 %)${cible != null ? ` et ${cible} m D+ (±15 %)` : ''} n’a été trouvée ${zoneTxt}. ` +
-          `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km${cible != null ? ` et ${Math.round(loops[0].dplusM)} m D+` : ''}. ` +
+        message: `Aucune boucle de ${req.distanceKm} km (±5 %) et ${cible} m D+ (±15 %) n’a été trouvée ${zoneTxt}. ` +
+          `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km et ${Math.round(loops[0].dplusM)} m D+. ` +
           (departDedans
-            ? 'Agrandis la zone ou change la distance.'
+            ? 'Agrandis la zone, ou change la distance ou le D+.'
             : 'Le départ est hors de la zone : l’accès compte dans la distance. Rapproche le départ, agrandis la zone ou change la distance.'),
-      };
-    }
-    const b = loops[0];
-    if (cible != null) {
-      return {
-        ok: true, loops, startNode: start, stats,
-        message: `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
       };
     }
     return {
       ok: true, loops, startNode: start, stats,
-      message: `D+ maximal ${zoneTxt} : ${Math.round(b.dplusM)} m sur ${(b.distanceM / 1000).toFixed(1)} km ` +
-        `(${Math.round(b.dplusM / (b.distanceM / 1000))} m/km ; la zone offre ${Math.round(denivZone)} m entre son point le plus bas et le plus haut).`,
+      message: `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
     };
   }
 }

@@ -44,7 +44,7 @@ async function generer(req: LoopRequest): Promise<LoopResponse & { chargement?: 
 async function genererZone(req: ZoneRequest) {
   if (!store) throw new Error('Données pas encore chargées');
   const t0 = performance.now();
-  const r = await store.graphFor(req.lat, req.lon, req.distanceKm, rayonZoneM(req.lat, req.lon, req.distanceKm, req.zone));
+  const r = await store.graphFor(req.lat, req.lon, req.distanceKm, rayonZoneM(req.lat, req.lon, req.zone));
   if (!r) {
     const noms = store.manifest.regions.map((x) => x.name).join(', ');
     return { ok: false, loops: [], startNode: -1, stats: { candidates: 0, routes: 0, ms: 0 }, message: `Ce départ est hors des régions couvertes (${noms}).` };
