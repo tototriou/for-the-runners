@@ -75,10 +75,11 @@ Le script :
    sentier aberrant (saut de plus de 1 km d'un seul trait, erreur de
    saisie) ; coupe aux intersections, écarte les îlots de moins de 300
    arêtes et fusionne les nœuds de degré 2 (jamais à cheval sur deux tuiles) ;
-3. prend l'altitude au **service altimétrique IGN** de la Géoplateforme (par
-   lots, avec cache) ; s'il est injoignable, se replie sur le **SRTM 1"**
-   (tuiles AWS), lissé par un flou gaussien pour retirer le bruit qui gonfle
-   le D+ sur le plat ;
+3. prend l'altitude au **RGE ALTI 5 m de l'IGN** (relief du sol nu) :
+   archives téléchargées par département (champ `rgealti` des régions dans
+   `config/regions.json`, ≈ 330 Mo chacune, gardées dans `.cache/`) ; hors
+   de France, repli sur le **SRTM 1"** (tuiles AWS) lissé par un flou
+   gaussien ;
 4. calcule pour chaque arête la longueur, le D+ dans chaque sens (altitude
    tous les 30 m), le type (route ou sentier) et une géométrie simplifiée ;
 5. range chaque arête dans la tuile de son premier nœud et écrit les tuiles
