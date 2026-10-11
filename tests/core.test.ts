@@ -205,15 +205,15 @@ describe('demi-tours', () => {
   });
 });
 
-describe('D+ maximal (grille synthétique)', () => {
+describe('Boucles dans une zone (grille synthétique)', () => {
   const g = grille();
   const gen = new ZoneGenerator(g);
   const depart = { lat: 45.9, lon: 6.13 };
 
-  it('reste dans le cercle, tient la distance, sans demi-tour court', () => {
+  it('reste dans le cercle, sans demi-tour court', () => {
     const rayonM = 1200;
-    const r = gen.generate({ ...depart, distanceKm: 5, terrain: 'mixte', zone: { kind: 'cercle', rayonM } });
-    expect(r.ok).toBe(true);
+    const r = gen.generate({ ...depart, distanceKm: 5, dplusM: 120, terrain: 'mixte', zone: { kind: 'cercle', rayonM } });
+    expect(r.loops.length).toBeGreaterThan(0);
     for (const l of r.loops) {
       verifierBoucle(g, l);
       for (const e of l.edges) {
@@ -223,21 +223,15 @@ describe('D+ maximal (grille synthétique)', () => {
       }
       expect(demiTours(g.len, l.edges).filter(([, , aller]) => aller < DEMI_TOUR_MIN_M)).toEqual([]);
     }
-    expect(Math.abs(r.loops[0].ecartDistance)).toBeLessThanOrEqual(0.05);
   });
 
-  it('fait plus de D+ qu\u2019une boucle ordinaire de même distance', () => {
-    const max = gen.generate({ ...depart, distanceKm: 5, terrain: 'mixte', zone: { kind: 'cercle', rayonM: 1500 } });
-    const normal = new LoopGenerator(g).generate({ ...depart, distanceKm: 5, dplusM: 150, terrain: 'mixte' });
-    expect(max.loops[0].dplusM).toBeGreaterThan(Math.max(...normal.loops.map((l) => l.dplusM)));
-  });
-
-  it('D+ visé dans une zone : tolérance tenue, boucle entièrement dans la zone', () => {
+  it('tient la distance et le D+, entièrement dans la zone', () => {
     const r = gen.generate({ ...depart, distanceKm: 5, dplusM: 120, terrain: 'mixte', zone: { kind: 'cercle', rayonM: 1500 } });
     expect(r.ok).toBe(true);
     const ok = r.loops.filter((l) => l.dansTolerance);
     expect(ok.length).toBeGreaterThan(0);
     for (const l of ok) {
+      expect(Math.abs(l.ecartDistance)).toBeLessThanOrEqual(0.05);
       expect(Math.abs(l.ecartDplus)).toBeLessThanOrEqual(0.15);
       expect(l.partZone).toBe(1);
     }
@@ -246,7 +240,7 @@ describe('D+ maximal (grille synthétique)', () => {
   it('accepte un départ sur la bordure d\u2019une zone dessinée', () => {
     const d = 0.008;
     const zone = { kind: 'polygone' as const, points: [[45.9, 6.13], [45.9, 6.13 + d], [45.9 + d, 6.13 + d], [45.9 + d, 6.13]] as [number, number][] };
-    const r = gen.generate({ ...depart, distanceKm: 3, terrain: 'mixte', zone });
+    const r = gen.generate({ ...depart, distanceKm: 3, dplusM: 60, terrain: 'mixte', zone });
     expect(r.loops.length).toBeGreaterThan(0);
     expect(r.message).not.toMatch(/presque aucun chemin/);
   });

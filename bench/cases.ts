@@ -97,25 +97,10 @@ export const CAS_IMPOSSIBLES: (Omit<Cas, 'id'> & { attendu: string })[] = [
 ];
 
 /**
- * Mode D+ maximal : départ, distance et rayon de zone. Des collines
- * (Annecy, Talloires, Munster), des buttes urbaines (Montmartre, Meudon) et
- * la plaine (Strasbourg), où le gain attendu est faible.
- */
-export const CAS_DPLUS_MAX: { region: string; depart: string; lat: number; lon: number; distanceKm: number; rayonM: number }[] = [
-  { region: 'annecy', depart: 'Annecy centre', lat: 45.8992, lon: 6.1294, distanceKm: 10, rayonM: 2000 },
-  { region: 'annecy', depart: 'Talloires', lat: 45.841, lon: 6.214, distanceKm: 8, rayonM: 1500 },
-  { region: 'annecy', depart: 'Seynod', lat: 45.885, lon: 6.09, distanceKm: 15, rayonM: 3000 },
-  { region: 'alsace', depart: 'Munster', lat: 48.0408, lon: 7.1347, distanceKm: 12, rayonM: 3000 },
-  { region: 'alsace', depart: 'Strasbourg', lat: 48.5734, lon: 7.7521, distanceKm: 8, rayonM: 2000 },
-  { region: 'idf', depart: 'Montmartre', lat: 48.8867, lon: 2.3431, distanceKm: 8, rayonM: 1500 },
-  { region: 'idf', depart: 'Meudon', lat: 48.8125, lon: 2.238, distanceKm: 12, rayonM: 3000 },
-  { region: 'idf', depart: 'Fontainebleau', lat: 48.4047, lon: 2.7016, distanceKm: 10, rayonM: 2500 },
-];
-
-/**
- * Boucles dans une zone avec D+ visé : les zones de CAS_DPLUS_MAX, D+ fixé
- * d'après le terrain avant mesure (Annecy, Montmartre et Fontainebleau ont
- * servi aux premiers essais). Plus un départ hors de la zone (forêt de
+ * Boucles dans une zone avec D+ visé : des collines (Annecy, Talloires,
+ * Munster), des buttes urbaines (Montmartre, Meudon) et la plaine
+ * (Strasbourg) ; D+ fixé d'après le terrain avant mesure (Annecy,
+ * Montmartre et Fontainebleau ont servi aux premiers essais). Plus un départ hors de la zone (forêt de
  * Meudon depuis le centre de Meudon).
  */
 export const CAS_ZONE_CIBLE: { region: string; depart: string; lat: number; lon: number; distanceKm: number; dplusM: number;
