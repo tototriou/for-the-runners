@@ -8,7 +8,8 @@ import type { Manifest, RegionMeta } from './core/tiles';
 
 type Reponse = LoopResponse & { chargement?: { region: string; tuiles: number; ms: number } };
 
-const COULEURS = ['#2563eb', '#dc2626', '#9333ea', '#ea580c', '#0891b2'];
+// Pas d'orange : réservé au départ décalé.
+const COULEURS = ['#2563eb', '#dc2626', '#9333ea', '#a16207', '#0891b2'];
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const form = $<HTMLFormElement>('form');
@@ -60,6 +61,7 @@ worker.onmessage = (ev: MessageEvent) => {
       selectRegion.appendChild(opt);
     }
     choisirRegion(regions[0].id);
+    departDepuisAdresse();
     $('zone-info').textContent = `Régions couvertes : ${regions.map((r) => r.name).join(', ')}`;
     $('credits').innerHTML =
       `Réseau : ${regions[0].reseau}.<br>Altitude : ${regions[0].mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
@@ -81,6 +83,17 @@ worker.postMessage({ type: 'load', base });
 let regions: RegionMeta[] = [];
 const selectRegion = $<HTMLSelectElement>('region');
 selectRegion.addEventListener('change', () => choisirRegion(selectRegion.value));
+
+/** `?depart=lat,lon` : départ posé à l'ouverture (lien partagé). */
+function departDepuisAdresse() {
+  const v = new URLSearchParams(location.search).get('depart');
+  const [lat, lon] = (v ?? '').split(',').map(Number);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  const r = regions.find(({ bbox: [x0, y0, x1, y1] }) => lon >= x0 && lon <= x1 && lat >= y0 && lat <= y1);
+  if (r) selectRegion.value = r.id;
+  map.setView([lat, lon], 13);
+  placerDepart(L.latLng(lat, lon));
+}
 
 function choisirRegion(id: string) {
   const r = regions.find((x) => x.id === id);
@@ -154,7 +167,17 @@ function afficher(res: Reponse) {
     li.addEventListener('click', () => selectionner(i));
     results.appendChild(li);
   });
-  map.fitBounds(L.featureGroup(lignes).getBounds(), { padding: [20, 20] });
+  const cadre = L.featureGroup(lignes);
+  if (res.depart && depart) {
+    // Départ déplacé faute de boucle depuis le point demandé : le relier au
+    // point demandé pour que le coureur voie où aller.
+    const nouveau = L.latLng(res.depart.lat, res.depart.lon);
+    L.polyline([depart, nouveau], { color: '#ea580c', weight: 2, dashArray: '6 6', interactive: false }).addTo(calques).addTo(cadre);
+    L.circleMarker(nouveau, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#ea580c', fillOpacity: 1 })
+      .bindTooltip(`Départ décalé de ${(res.depart.decalageM / 1000).toFixed(1).replace('.', ',')} km`)
+      .addTo(calques).addTo(cadre);
+  }
+  map.fitBounds(cadre.getBounds(), { padding: [20, 20] });
   selectionner(0);
 }
 
