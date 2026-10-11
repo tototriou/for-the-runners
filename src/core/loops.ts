@@ -56,6 +56,11 @@ export interface LoopResponse {
   stats: { candidates: number; routes: number; travail?: number; ms: number };
   /** Présent si le départ a été déplacé faute de boucle depuis le point demandé. */
   depart?: { lat: number; lon: number; decalageM: number };
+  /**
+   * Présent si la demande reste impossible : D+ réalisable à cette distance
+   * depuis ce départ, tiré d'une boucle réellement explorée.
+   */
+  suggestion?: { dplusM: number; sens: 'reduire' | 'augmenter'; plage: [number, number] };
 }
 
 interface Params {
@@ -365,13 +370,15 @@ export class LoopGenerator {
 
     if (nOk === 0) {
       const b = loops[0];
+      const suggestion = suggererDplus(cands, target);
+      const conseil = suggestion
+        ? ` À ${req.distanceKm} km, les boucles possibles ici font de ${suggestion.plage[0]} à ${suggestion.plage[1]} m D+ : ` +
+          `essaie ${suggestion.dplusM} m (${suggestion.sens === 'reduire' ? 'moins' : 'plus'} de D+).`
+        : ` La plus proche fait ${(b.distanceM / 1000).toFixed(1)} km (${pct(b.ecartDistance)}) ` +
+          `pour ${Math.round(b.dplusM)} m D+ (${pct(b.ecartDplus)}).`;
       return {
-        ok: false, loops, startNode: start, stats,
-        message:
-          `Aucune boucle ne respecte à la fois ±5 % de distance et ±15 % de D+, ` +
-          `ni depuis ce départ ni depuis un départ à moins de 2 km. ` +
-          `La plus proche fait ${(b.distanceM / 1000).toFixed(1)} km (${pct(b.ecartDistance)}) ` +
-          `pour ${Math.round(b.dplusM)} m D+ (${pct(b.ecartDplus)}).`,
+        ok: false, loops, startNode: start, stats, suggestion: suggestion ?? undefined,
+        message: `Impossible depuis ce départ, même en le décalant de 2 km au plus.${conseil}`,
       };
     }
     const resume = `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`;
@@ -389,6 +396,33 @@ export class LoopGenerator {
     }
     return { ok: true, loops, startNode: start, stats, message: resume };
   }
+}
+
+/**
+ * D+ réalisable à la distance visée : parmi les candidates explorées dont la
+ * distance est dans la tolérance, la plage de D+ obtenue, et sa borne la plus
+ * proche de la cible, arrondie (arrondiDplus). Une
+ * boucle explorée l'atteint : la redemander a de bonnes chances d'aboutir.
+ */
+function suggererDplus(cands: Candidate[], t: { d: number; h: number }): LoopResponse['suggestion'] | null {
+  const dp = cands.filter((c) => Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE).map((c) => c.dplusM);
+  if (dp.length === 0) return null;
+  const min = Math.min(...dp);
+  const max = Math.max(...dp);
+  const plage: [number, number] = [arrondiDplus(min), arrondiDplus(max)];
+  if (t.h > max) return { dplusM: plage[1], sens: 'reduire', plage };
+  if (t.h < min) return { dplusM: plage[0], sens: 'augmenter', plage };
+  // Cible dans la plage mais entre deux boucles explorées : la plus proche.
+  const proche = dp.reduce((a, v) => (Math.abs(v - t.h) < Math.abs(a - t.h) ? v : a));
+  return { dplusM: arrondiDplus(proche), sens: proche < t.h ? 'reduire' : 'augmenter', plage };
+}
+
+/**
+ * Arrondi lisible qui reste dans la tolérance de ±15 % autour de la boucle
+ * explorée : au plus proche, par pas de 5 m sous 100 m, de 10 m au-dessus.
+ */
+function arrondiDplus(v: number) {
+  return v < 100 ? Math.max(5, Math.round(v / 5) * 5) : Math.round(v / 10) * 10;
 }
 
 /** Direction cardinale d'un déplacement (x vers l'est, y vers le nord). */

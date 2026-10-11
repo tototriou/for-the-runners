@@ -112,7 +112,7 @@ describe('LoopGenerator (grille synthétique)', () => {
     const r = gen.generate({ ...depart, distanceKm: 2, dplusM: 3000, terrain: 'mixte' });
     expect(r.ok).toBe(false);
     expect(r.loops.length).toBeGreaterThan(0);
-    expect(r.message).toMatch(/Aucune boucle/);
+    expect(r.message).toMatch(/Impossible depuis ce départ/);
   });
 
   it('cible impossible depuis le point, possible à moins de 2 km : départ décalé', () => {
@@ -130,6 +130,18 @@ describe('LoopGenerator (grille synthétique)', () => {
     }
     // Sans élargissement, la même demande échoue : le décalage était nécessaire.
     expect(gen.generate({ lat, lon, distanceKm: 2.5, dplusM: 150, terrain: 'mixte', elargir: false }).ok).toBe(false);
+  });
+
+  it('toujours impossible : un D+ réalisable est suggéré, et il aboutit', () => {
+    const r = gen.generate({ ...depart, distanceKm: 3, dplusM: 2000, terrain: 'mixte' });
+    expect(r.ok).toBe(false);
+    expect(r.suggestion?.sens).toBe('reduire');
+    expect(r.message).toMatch(/essaie \d+ m/);
+    const s = r.suggestion!;
+    expect(s.dplusM).toBeGreaterThanOrEqual(s.plage[0]);
+    expect(s.dplusM).toBeLessThanOrEqual(s.plage[1]);
+    const r2 = gen.generate({ ...depart, distanceKm: 3, dplusM: s.dplusM, terrain: 'mixte' });
+    expect(r2.loops.some((l) => l.dansTolerance)).toBe(true);
   });
 
   it('départ hors réseau : message, pas d’exception', () => {
