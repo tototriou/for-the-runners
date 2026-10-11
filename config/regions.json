@@ -1,0 +1,8 @@
+{
+  "overtureRelease": "2026-09-23.1",
+  "regions": [
+    { "id": "annecy", "name": "Annecy", "bbox": [5.932, 45.762, 6.327, 46.037], "center": [45.8992, 6.1294] },
+    { "id": "alsace", "name": "Alsace", "bbox": [6.84, 47.42, 8.24, 49.08], "center": [48.2, 7.45] },
+    { "id": "idf", "name": "Île-de-France", "bbox": [1.44, 48.12, 3.56, 49.24], "center": [48.8566, 2.3522] }
+  ]
+}
