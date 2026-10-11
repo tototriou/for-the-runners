@@ -20,7 +20,9 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 
 Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Si aucune boucle
 ne la respecte depuis le point choisi, l'app essaie un départ à moins de
-2 km et l'affiche en orange, relié au point demandé.
+2 km et l'affiche en orange, relié au point demandé. Si c'est encore
+impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
+« Essayer N m de D+ »).
 
 Un lien peut fixer le départ : `…/for-the-runners/?depart=45.942,6.115`.
 

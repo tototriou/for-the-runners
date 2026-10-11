@@ -1,7 +1,7 @@
 # Note : limites constatées et prochaines étapes
 
 1. Banc : Annecy (cadrage) 84 % depuis le point exact, 90 % avec départ décalé ; Alsace 80 % ; Île-de-France 83 %. Pire calcul : 4,5 s en Node, en plein Paris.
-2. Si rien n'est possible depuis le point choisi, l'app essaie un départ à moins de 2 km et le signale. Au-delà, elle propose la boucle la plus proche.
+2. Si rien n'est possible depuis le point choisi, l'app essaie un départ à moins de 2 km et le signale. Au-delà, elle propose un D+ réalisable à cette distance (15 suggestions sur 16 aboutissent au banc).
 3. Altitude : l'IGN était injoignable depuis l'environnement de construction ; les données viennent du SRTM 1" lissé. En ville, il compte les immeubles comme du relief : à Paris, une boucle plate affiche trop de D+.
 4. Le SRTM est un modèle de surface (bâtiments, forêt) : le D+ annoncé peut s'écarter du D+ réel. C'est le test terrain (3 sorties, montre) qui le dira.
 5. Réseau : Overture Maps (issu d'OSM). Sont exclus : accès privés, allées, parkings, trottoirs et passages piétons cartographiés à part, sentiers aberrants.
