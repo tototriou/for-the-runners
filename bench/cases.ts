@@ -53,7 +53,10 @@ export function casDeTest(): Cas[] {
 export const DEPARTS_REGIONAUX: { region: string; nom: string; lat: number; lon: number; pente: [number, number] }[] = [
   { region: 'Alsace', nom: 'Strasbourg', lat: 48.5734, lon: 7.7521, pente: [3, 8] },
   { region: 'Alsace', nom: 'Mulhouse', lat: 47.7508, lon: 7.3359, pente: [5, 15] },
-  { region: 'Alsace', nom: 'Colmar', lat: 48.0794, lon: 7.3585, pente: [10, 40] },
+  // Plage corrigée après une première mesure : [10, 40] supposait le relief
+  // vosgien, mais il commence à 6 km du centre, hors de portée d'une boucle
+  // courte ou d'un départ décalé de 2 km. Colmar est en plaine, comme Mulhouse.
+  { region: 'Alsace', nom: 'Colmar', lat: 48.0794, lon: 7.3585, pente: [3, 12] },
   { region: 'Alsace', nom: 'Munster', lat: 48.0408, lon: 7.1347, pente: [20, 55] },
   { region: 'Alsace', nom: 'Obernai', lat: 48.4622, lon: 7.4819, pente: [15, 45] },
   { region: 'Île-de-France', nom: 'Paris centre', lat: 48.853, lon: 2.3499, pente: [3, 10] },
