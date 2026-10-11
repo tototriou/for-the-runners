@@ -76,6 +76,13 @@ const N_PARENTS = 9;
 const N_VARIANTES = 35;
 const ITER_RAYON = 4;
 const TOURS_SUPPLEMENTAIRES = 2;
+// A* pondéré : l'heuristique exacte (minorée par le plus petit facteur de
+// coût, 0,2 quand le relief est attiré) n'élague presque rien et coûtait
+// jusqu'à 20 s sur le réseau dense de Paris. Le coût n'est lui-même qu'une
+// heuristique de forme de boucle : un chemin légèrement sous-optimal suffit.
+// Mesuré sur les trois jeux du banc (0 ; 0,6 ; 0,8 ; 1) : 1 est le plus
+// rapide et ne perd aucune réussite.
+const POIDS_HEURISTIQUE_MIN = 1;
 const MODES: (-1 | 0 | 1)[] = [-1, 0, 0, 1, 1];
 const PENALITE_REUSE = 3;
 const DETOUR = 1.3;
@@ -163,7 +170,7 @@ export class LoopGenerator {
     for (let i = 0; i + 1 < pts.length; i++) {
       if (pts[i] === pts[i + 1]) continue;
       this.routes++;
-      const r = this.router.route(pts[i], pts[i + 1], cost, minFactor, used, PENALITE_REUSE);
+      const r = this.router.route(pts[i], pts[i + 1], cost, Math.max(minFactor, POIDS_HEURISTIQUE_MIN), used, PENALITE_REUSE);
       if (!r) {
         ok = false;
         break;
