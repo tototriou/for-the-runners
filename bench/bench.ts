@@ -24,7 +24,9 @@ function famille(cls: number): number {
   return FAMILLES.findIndex(([, l]) => l.includes(nom));
 }
 import { toGpx } from '../src/core/gpx';
-import { CAS_IMPOSSIBLES, casDeTest, casRegionaux, type Cas } from './cases';
+import { CAS_DPLUS_MAX, CAS_IMPOSSIBLES, casDeTest, casRegionaux, type Cas } from './cases';
+import { DplusMaxGenerator, rayonZoneM } from '../src/core/dplusmax';
+import { LoopGenerator } from '../src/core/loops';
 import { chargerStore, Generateur } from './load';
 
 const SEUIL_REUSSITE = 0.8;
@@ -181,6 +183,54 @@ for (const [id, titre, desc, cas] of definitions) {
   jeux.push(await jouer(id, titre, desc, cas, id === 'annecy'));
 }
 
+// --------------------------------------------------------------- D+ maximal
+const lignesMax: string[] = [];
+let maxOk = true;
+let maxCriteres: Critere[] = [];
+if (!jeuDemande || jeuDemande === 'dmax') {
+  let dansTol = 0;
+  let horsZone = 0;
+  let demiToursMax = 0;
+  let nBoucles = 0;
+  let tMax = 0;
+  const cas = CAS_DPLUS_MAX.filter((c) => presentes.has(c.region));
+  process.stdout.write('D+ maximal : ');
+  for (const c of cas) {
+    const zone = { kind: 'cercle' as const, rayonM: c.rayonM };
+    const r = (await gen.store.graphFor(c.lat, c.lon, c.distanceKm, rayonZoneM(c.lat, c.lon, c.distanceKm, zone)))!;
+    const g = r.graph;
+    const res = new DplusMaxGenerator(g).generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, terrain: 'mixte', zone, seed: SEED });
+    tMax = Math.max(tMax, res.stats.ms);
+    const b = res.loops[0];
+    const ok = !!b && b.dansTolerance;
+    if (ok) dansTol++;
+    for (const l of res.loops) {
+      nBoucles++;
+      demiToursMax += demiTours(g.len, l.edges).filter(([, , aller]) => aller < DEMI_TOUR_MIN_M).length;
+      // Hors zone : au-delà du rayon, hors du couloir d'accès de 300 m.
+      for (const e of l.edges) {
+        const d = Math.max(...[g.a[e], g.b[e]].map((n) => Math.hypot(g.x[n] - g.x[res.startNode], g.y[n] - g.y[res.startNode])));
+        if (d > c.rayonM + 1) horsZone++;
+      }
+    }
+    // Référence : le mode normal, sans zone, à qui l'on demande un D+ très élevé.
+    const r0 = (await gen.store.graphFor(c.lat, c.lon, c.distanceKm))!;
+    const ref = new LoopGenerator(r0.graph).generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: 5000, terrain: 'mixte', elargir: false, seed: SEED });
+    const refDp = Math.max(0, ...ref.loops.filter((l) => Math.abs(l.ecartDistance) <= 0.05).map((l) => l.dplusM));
+    lignesMax.push(`| ${c.depart} | ${c.distanceKm} km, rayon ${c.rayonM / 1000} km | ${b ? `${(b.distanceM / 1000).toFixed(2)} km / ${Math.round(b.dplusM)} m (${Math.round(b.dplusM / (b.distanceM / 1000))} m/km)` : '–'} | ${refDp ? `${Math.round(refDp)} m` : '–'} | ${(res.stats.ms / 1000).toFixed(2)} s | ${ok ? 'oui' : '**non**'} |`);
+    process.stdout.write(ok ? '.' : 'x');
+  }
+  process.stdout.write('\n');
+  maxCriteres = [
+    { nom: 'Meilleure boucle dans la tolérance de distance', seuil: '≥ 80 %', valeur: `${dansTol}/${cas.length}`, ok: dansTol >= 0.8 * cas.length },
+    { nom: 'Tronçons hors zone', seuil: '0', valeur: `${horsZone}`, ok: horsZone === 0 },
+    { nom: 'Demi-tours de moins de 1 km', seuil: '0', valeur: `${demiToursMax} sur ${nBoucles} boucles`, ok: demiToursMax === 0 },
+    { nom: 'Temps de calcul (Node, max)', seuil: '< 10 s', valeur: `${(tMax / 1000).toFixed(2)} s`, ok: tMax < SEUIL_TEMPS_MS },
+  ];
+  maxOk = maxCriteres.every((k) => k.ok);
+  for (const k of maxCriteres) console.log(`  ${k.ok ? 'OK ' : 'KO '} ${k.nom} : ${k.valeur} (seuil ${k.seuil})`);
+}
+
 // ------------------------------------------------------- cibles impossibles
 const lignesImp: string[] = [];
 let impOk = true;
@@ -209,7 +259,7 @@ if (!jeuDemande || jeuDemande === 'annecy') {
   }
   console.log(`${impOk ? 'OK ' : 'KO '} Cibles impossibles : ${impOk ? 'toutes correctes' : 'échec'}`);
 }
-const toutOk = impOk && jeux.every((j) => j.criteres.every((c) => c.ok));
+const toutOk = impOk && maxOk && jeux.every((j) => j.criteres.every((c) => c.ok));
 
 // ---------------------------------------------------------- GPX d'exemple
 const gpxEcrits: string[] = [];
@@ -268,6 +318,7 @@ Altitude : ${gen.store.manifest.regions[0]?.mnt}.
 ## Verdict : ${toutOk ? '✅ tous les critères automatiques sont atteints' : '❌ au moins un critère échoue'}
 
 ${jeux.map((j) => `- ${j.titre} : ${j.criteres.every((c) => c.ok) ? '✅' : '❌'} ${j.criteres[0].valeur} dans la tolérance`).join('\n')}
+- D+ maximal : ${maxOk ? '✅' : '❌'} ${maxCriteres[0]?.valeur ?? '–'} dans la tolérance de distance, zone respectée
 - Cibles impossibles : ${impOk ? '✅' : '❌'} message clair, jamais d'erreur
 
 Reste à vérifier hors banc : le D+ réel sur 3 sorties (montre) et le temps sur téléphone.
@@ -277,6 +328,20 @@ Reste à vérifier hors banc : le D+ réel sur 3 sorties (montre) et le temps su
 ${regions}
 
 ${jeux.map(sectionJeu).join('\n')}
+## D+ maximal
+
+Zone : cercle autour du départ ; allers-retours non permis. Référence : le
+mode normal sans zone, à qui l'on demande 5 000 m de D+ (sa meilleure boucle
+dans la tolérance de distance).
+
+| Critère | Seuil | Mesure | |
+| --- | --- | --- | --- |
+${maxCriteres.map((c) => `| ${c.nom} | ${c.seuil} | ${c.valeur} | ${c.ok ? '✅' : '❌'} |`).join('\n')}
+
+| Départ | Demande | Meilleure boucle | Référence (mode normal, sans zone) | Temps | Distance tenue |
+| --- | --- | --- | --- | --- | --- |
+${lignesMax.join('\n')}
+
 ## Cibles impossibles
 
 | Demande | Attendu | Message renvoyé | Correct |

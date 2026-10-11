@@ -95,3 +95,19 @@ export const CAS_IMPOSSIBLES: (Omit<Cas, 'id'> & { attendu: string })[] = [
   { depart: 'Annecy centre', lat: 45.8992, lon: 6.1294, distanceKm: 0, dplusM: 100, terrain: 'mixte', attendu: 'saisie invalide' },
   { depart: 'Lyon (hors régions)', lat: 45.764, lon: 4.8357, distanceKm: 10, dplusM: 200, terrain: 'mixte', attendu: 'hors régions' },
 ];
+
+/**
+ * Mode D+ maximal : départ, distance et rayon de zone. Des collines
+ * (Annecy, Talloires, Munster), des buttes urbaines (Montmartre, Meudon) et
+ * la plaine (Strasbourg), où le gain attendu est faible.
+ */
+export const CAS_DPLUS_MAX: { region: string; depart: string; lat: number; lon: number; distanceKm: number; rayonM: number }[] = [
+  { region: 'annecy', depart: 'Annecy centre', lat: 45.8992, lon: 6.1294, distanceKm: 10, rayonM: 2000 },
+  { region: 'annecy', depart: 'Talloires', lat: 45.841, lon: 6.214, distanceKm: 8, rayonM: 1500 },
+  { region: 'annecy', depart: 'Seynod', lat: 45.885, lon: 6.09, distanceKm: 15, rayonM: 3000 },
+  { region: 'alsace', depart: 'Munster', lat: 48.0408, lon: 7.1347, distanceKm: 12, rayonM: 3000 },
+  { region: 'alsace', depart: 'Strasbourg', lat: 48.5734, lon: 7.7521, distanceKm: 8, rayonM: 2000 },
+  { region: 'idf', depart: 'Montmartre', lat: 48.8867, lon: 2.3431, distanceKm: 8, rayonM: 1500 },
+  { region: 'idf', depart: 'Meudon', lat: 48.8125, lon: 2.238, distanceKm: 12, rayonM: 3000 },
+  { region: 'idf', depart: 'Fontainebleau', lat: 48.4047, lon: 2.7016, distanceKm: 10, rayonM: 2500 },
+];
