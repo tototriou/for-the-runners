@@ -28,6 +28,13 @@ ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
 « Essayer N m de D+ »).
 
+**Objectif « D+ maximal ».** Au lieu d'un D+ visé, l'app cherche la boucle
+la plus dénivelée à la distance demandée (±5 %), sans sortir d'une zone :
+un cercle autour du départ (rayon à choisir) ou une zone dessinée en
+touchant la carte. Elle enchaîne montées et descentes en préférant monter
+par une rue et redescendre par la voisine ; la case « Autoriser les
+allers-retours » permet de répéter la même côte.
+
 Un lien peut fixer le départ : `…/for-the-runners/?depart=45.942,6.115`.
 
 ## Lancer en local
@@ -110,6 +117,7 @@ base à changer).
 | `src/core/graph.ts` | Décodage du graphe, adjacence, index spatial |
 | `src/core/router.ts` | A* à coût paramétrable (relief, terrain, tronçons déjà pris) |
 | `src/core/loops.ts` | Générateur de boucles : candidates, ajustement du rayon, score, variantes, diversité |
+| `src/core/dplusmax.ts` | Mode D+ maximal : zone, montées et descentes enchaînées |
 | `src/core/tiles.ts` | Choix des tuiles autour du départ, cache, fusion en un graphe |
 | `src/core/gpx.ts` | Export GPX 1.1 |
 | `src/worker.ts`, `src/main.ts` | Web Worker et interface (Leaflet) |
