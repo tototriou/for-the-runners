@@ -12,7 +12,7 @@
 //    ou le plus bas alentour, puis un cercle de 1,5 km) ; sinon la boucle la
 //    plus proche, avec un message explicite.
 
-import { distanceToNode, nearestNode, TYPE_SENTIER, type Graph, type Terrain } from './graph';
+import { CLASSES, distanceToNode, nearestNode, TYPE_SENTIER, type Graph, type Terrain } from './graph';
 import { Router } from './router';
 
 export const TOL_DISTANCE = 0.05;
@@ -41,6 +41,8 @@ export interface Loop {
   ecartDplus: number;
   /** Part de la longueur parcourue sur des arêtes empruntées plus d'une fois. */
   allerRetour: number;
+  /** Distance sur grande route (principale, départementale), en mètres. */
+  grandesRoutesM: number;
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -127,6 +129,21 @@ function rng(seed: number) {
   };
 }
 
+/**
+ * Surcoût par classe de voie : les grandes routes (souvent sans trottoir ni
+ * accotement) ne sont prises que faute de mieux — un pont, un col — mais
+ * restent possibles, les exclure couperait des liaisons indispensables.
+ * Mesuré avant : 14 à 21 % de la distance des boucles sur ces routes.
+ */
+const FACTEUR_CLASSE: Partial<Record<(typeof CLASSES)[number], number>> = {
+  primary: 4,
+  secondary: 4,
+  tertiary: 1.5,
+};
+const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) => FACTEUR_CLASSE[CLASSES[k]] ?? 1);
+/** Classes comptées comme « grande route » dans les boucles affichées. */
+export const CODES_GRANDES_ROUTES = new Set([CLASSES.indexOf('primary'), CLASSES.indexOf('secondary')]);
+
 const FACTEURS_TERRAIN: Record<Terrain, [number, number]> = {
   // [route, sentier]
   mixte: [1, 1],
@@ -165,7 +182,7 @@ export class LoopGenerator {
       const L = g.len[e];
       const relief = L > 0 ? (g.upAB[e] + g.upBA[e]) / L : 0;
       const fPente = Math.min(5, Math.max(0.2, Math.exp(-beta * relief * 10)));
-      const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute);
+      const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]];
       cost[e] = Math.max(L, 0.1) * f;
       if (f < minFactor) minFactor = f;
     }
@@ -365,9 +382,14 @@ export class LoopGenerator {
       }
     }
 
-    // Choix final : les meilleures, assez différentes entre elles.
+    // Choix final : les meilleures, assez différentes entre elles. Celles
+    // dans la tolérance d'abord : le score peut classer devant elles une
+    // boucle hors tolérance (+2 % / +18 % bat 4 % / 13 %), qui l'évinçait.
+    const ordre = [...cands].sort(
+      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || x.score - y.score,
+    );
     const choisies: { c: Candidate; set: Set<number> }[] = [];
-    for (const c of cands) {
+    for (const c of ordre) {
       const set = new Set(c.edges);
       if (choisies.every((s) => jaccard(set, s.set) < 0.5)) choisies.push({ c, set });
       if (choisies.length === 5) break;
@@ -541,6 +563,7 @@ function finaliser(g: Graph, c: Candidate, t: { d: number; h: number }): Loop {
   return {
     edges: c.edges, dirs: c.dirs, distanceM: c.distanceM, dplusM: c.dplusM,
     ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
+    grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: Math.abs(ecartDistance) <= TOL_DISTANCE && Math.abs(ecartDplus) <= TOL_DPLUS,
     coords, cumul,
   };
