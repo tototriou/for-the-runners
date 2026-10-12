@@ -42,6 +42,8 @@ const calques = L.layerGroup().addTo(map);
 // Zone choisie, à part : elle reste affichée entre deux calculs.
 const calqueZone = L.layerGroup().addTo(map);
 let dessin = false;
+// D+ laissé vide : boucle de la distance demandée, D+ libre.
+let dernierLibre = false;
 let pointsZone: L.LatLng[] = [];
 let lignes: L.Polyline[] = [];
 let boucles: Loop[] = [];
@@ -186,7 +188,9 @@ form.addEventListener('submit', (e) => {
   e.preventDefault();
   if (!depart) return;
   const distanceKm = Number($<HTMLInputElement>('distance').value);
-  const dplusM = Number($<HTMLInputElement>('dplus').value);
+  const brutDplus = $<HTMLInputElement>('dplus').value.trim();
+  const dplusM = brutDplus === '' ? undefined : Number(brutDplus);
+  dernierLibre = dplusM === undefined;
   const terrain = $<HTMLSelectElement>('terrain').value as Terrain;
   essayer.hidden = true;
   if (zoneActive()) {
@@ -257,7 +261,7 @@ function afficher(res: Reponse) {
       <span class="main">${(loop.distanceM / 1000).toFixed(1)} km · ${Math.round(loop.dplusM)} m D+</span>
       <span class="gaps">
         <span class="${Math.abs(loop.ecartDistance) <= 0.05 ? 'ok' : 'ko'}">dist. ${pct(loop.ecartDistance)}</span> ·
-        <span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·
+        ${dernierLibre ? '' : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·`}
         aller-retour ${(loop.allerRetour * 100).toFixed(0)} %${
           loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
         }${
