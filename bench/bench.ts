@@ -50,6 +50,11 @@ interface ResultatJeu {
   lignes: string[]; reponses: { c: Cas; r: LoopResponse }[]; msChargementMax: number;
 }
 
+/** D+ visé pour le rapport ; NaN : D+ libre. */
+function dplusTxt(dp: number) {
+  return Number.isNaN(dp) ? 'D+ libre' : `${dp} m`;
+}
+
 function pct(x: number) {
   return `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} %`;
 }
@@ -105,7 +110,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
     const nOk = r.loops.filter((l) => l.dansTolerance).length;
     const verdict = !ok ? '**non**' : r.depart ? `oui, départ décalé de ${Math.round(r.depart.decalageM)} m` : 'oui';
     lignes.push(
-      `| ${c.id} | ${c.depart} | ${c.distanceKm} km / ${c.dplusM} m | ${c.terrain} | ${cell} | ${nOk}/${r.loops.length} | ${(r.stats.ms / 1000).toFixed(2)} s | ${verdict} |`,
+      `| ${c.id} | ${c.depart} | ${c.distanceKm} km / ${dplusTxt(c.dplusM)} | ${c.terrain} | ${cell} | ${nOk}/${r.loops.length} | ${(r.stats.ms / 1000).toFixed(2)} s | ${verdict} |`,
     );
     if (!ok) {
       // La demande impossible propose un D+ : vérifier qu'il aboutit vraiment.
@@ -117,7 +122,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
         if (ok2) suggereesOk++;
         suivi = ` → suggestion ${r.suggestion.dplusM} m suivie : ${ok2 ? 'aboutit' : '**n\u2019aboutit pas**'}`;
       }
-      echecs.push(`- #${c.id} ${c.depart}, ${c.distanceKm} km / ${c.dplusM} m (${c.terrain}) : ${r.message}${suivi}`);
+      echecs.push(`- #${c.id} ${c.depart}, ${c.distanceKm} km / ${dplusTxt(c.dplusM)} (${c.terrain}) : ${r.message}${suivi}`);
     }
     process.stdout.write(!ok ? 'x' : r.depart ? 'd' : '.');
   }
@@ -170,17 +175,18 @@ const jeux: ResultatJeu[] = [];
 const regionaux = casRegionaux();
 const definitions: [string, string, string, Cas[]][] = [
   ['annecy', 'Annecy (jeu du cadrage)', '50 demandes : 5 départs × 10 distances de 5 à 30 km, D+ de 50 à 1 500 m. Seuil jugé depuis le point exact, comme au cadrage.', casDeTest()],
+  ['libre', 'Annecy, D+ libre', 'Les 50 demandes du cadrage sans D+ visé : seule la distance compte (±5 %). Seuil jugé depuis le point exact.', casDeTest().map((c) => ({ ...c, dplusM: NaN }))],
   ['alsace', 'Alsace', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l\u2019app répond, départ décalé compris.', regionaux.filter((c) => c.region === 'Alsace')],
   ['idf', 'Île-de-France', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l\u2019app répond, départ décalé compris.', regionaux.filter((c) => c.region === 'Île-de-France')],
 ];
 const presentes = new Set(gen.store.manifest.regions.map((r) => r.id));
 for (const [id, titre, desc, cas] of definitions) {
   if (jeuDemande && jeuDemande !== id) continue;
-  if (!presentes.has(id)) {
+  if (!presentes.has(id === 'libre' ? 'annecy' : id)) {
     console.log(`${titre} : région absente du manifeste, jeu ignoré`);
     continue;
   }
-  jeux.push(await jouer(id, titre, desc, cas, id === 'annecy'));
+  jeux.push(await jouer(id, titre, desc, cas, id === 'annecy' || id === 'libre'));
 }
 
 // ------------------------------------------------- zone avec D+ visé

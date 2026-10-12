@@ -15,6 +15,9 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 
 1. Choisis la région, puis touche la carte pour placer le départ.
 2. Saisis la distance (km), le D+ (m) et le terrain (mixte, sentiers, route).
+   Le D+ est facultatif : laissé vide, l'app propose des boucles de la
+   distance demandée, classées du plus roulant au plus vallonné, chacune
+   avec son D+.
 3. « Générer les boucles » : 3 à 5 boucles, avec leurs écarts à la cible, le
    tracé et le profil. Le bouton GPX télécharge la boucle pour une montre.
 
