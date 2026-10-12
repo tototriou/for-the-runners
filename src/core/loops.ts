@@ -23,7 +23,8 @@ export interface LoopRequest {
   lat: number;
   lon: number;
   distanceKm: number;
-  dplusM: number;
+  /** D+ visé ; absent : boucle de la distance demandée, D+ libre. */
+  dplusM?: number;
   terrain: Terrain;
   seed?: number;
   /** Chercher un autre départ à moins de 2 km si rien n'est possible (défaut : oui). */
@@ -204,7 +205,7 @@ export class LoopGenerator {
 
 
   /** Construit la boucle pour des paramètres donnés (sans ajuster le rayon). */
-  private build(start: number, p: Params, terrain: Terrain, target: { d: number; h: number }): Candidate | null {
+  private build(start: number, p: Params, terrain: Terrain, target: Cible): Candidate | null {
     const g = this.g;
     const cx = g.x[start] + p.radius * Math.cos(p.theta);
     const cy = g.y[start] + p.radius * Math.sin(p.theta);
@@ -259,7 +260,7 @@ export class LoopGenerator {
   }
 
   /** Construit puis ajuste le rayon jusqu'à approcher la distance visée. */
-  private buildAdjusted(start: number, p: Params, terrain: Terrain, target: { d: number; h: number }, iters: number) {
+  private buildAdjusted(start: number, p: Params, terrain: Terrain, target: Cible, iters: number) {
     let best: Candidate | null = null;
     let cur = { ...p };
     for (let it = 0; it < iters; it++) {
@@ -277,7 +278,7 @@ export class LoopGenerator {
    * Étapes 1 à 5 depuis un départ : candidates, ajustement du rayon,
    * variantes autour des meilleures. Renvoie les candidates triées par score.
    */
-  private rechercher(start: number, terrain: Terrain, target: { d: number; h: number }, rand: () => number,
+  private rechercher(start: number, terrain: Terrain, target: Cible, rand: () => number,
     nCandidats: number, tours: number, nVariantes: number): Candidate[] {
     const theta0 = rand() * 2 * Math.PI;
     const r0 = target.d / (2 * Math.PI * DETOUR);
@@ -303,7 +304,8 @@ export class LoopGenerator {
       let nVar = 0;
       for (const par of parents) {
         for (let v = 0; v < parVariante && nVar < nVariantes && !this.epuise(); v++, nVar++) {
-          const errH = Math.log(Math.max(target.h, 10) / Math.max(par.dplusM, 10));
+          // D+ libre : rien à corriger, seules l'orientation et la forme varient.
+          const errH = target.h == null ? 0 : Math.log(Math.max(target.h, 10) / Math.max(par.dplusM, 10));
           const pas = Math.max(-1.6, Math.min(1.6, errH * 1.8));
           const p: Params = {
             theta: par.p.theta + (v === 0 ? 0 : (rand() - 0.5) * 0.7),
@@ -358,12 +360,13 @@ export class LoopGenerator {
       stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },
     });
 
-    if (!(req.distanceKm > 0) || !(req.dplusM >= 0)) return vide('Distance et D+ doivent être positifs.');
+    const libre = req.dplusM == null || Number.isNaN(req.dplusM);
+    if (!(req.distanceKm > 0) || (!libre && !(req.dplusM! >= 0))) return vide('Distance et D+ doivent être positifs.');
     const demande = nearestNode(g, req.lat, req.lon);
     if (demande < 0 || distanceToNode(g, req.lat, req.lon, demande) > 300) {
       return vide('Point de départ trop loin d\u2019un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
     }
-    const target = { d: req.distanceKm * 1000, h: Math.max(req.dplusM, 1) };
+    const target: Cible = { d: req.distanceKm * 1000, h: libre ? null : Math.max(req.dplusM!, 1) };
     const rand = rng(req.seed ?? 12345);
 
     let start = demande;
@@ -377,7 +380,7 @@ export class LoopGenerator {
       this.budget += BUDGET_ELARGISSEMENT;
       const nOk = (cs: Candidate[]) => cs.filter((c) => dansTolerance(c, target)).length;
       let meilleur = { start, cands, ok: 0 };
-      for (const alt of this.departsAlternatifs(start, cands[0].dplusM < target.h)) {
+      for (const alt of this.departsAlternatifs(start, target.h != null && cands[0].dplusM < target.h)) {
         if (this.epuise()) break;
         const cs = this.rechercher(alt, req.terrain, target, rand, 16, 1, 12);
         if (cs.length === 0) continue;
@@ -406,23 +409,28 @@ export class LoopGenerator {
       if (choisies.length === 5) break;
     }
     const loops = choisies.map(({ c }) => finaliser(g, c, target));
+    // D+ libre : du plus roulant au plus vallonné, pour choisir.
+    if (libre) loops.sort((a, b) => a.dplusM - b.dplusM);
     const nOk = loops.filter((l) => l.dansTolerance).length;
     const stats = { candidates: cands.length, routes: this.routes, travail: this.travail, ms: now() - t0 };
 
     if (nOk === 0) {
       const b = loops[0];
-      const suggestion = suggererDplus(cands, target);
+      const suggestion = target.h == null ? null : suggererDplus(cands, target.h, target.d);
       const conseil = suggestion
         ? ` À ${req.distanceKm} km, les boucles possibles ici font de ${suggestion.plage[0]} à ${suggestion.plage[1]} m D+ : ` +
           `essaie ${suggestion.dplusM} m (${suggestion.sens === 'reduire' ? 'moins' : 'plus'} de D+).`
         : ` La plus proche fait ${(b.distanceM / 1000).toFixed(1)} km (${pct(b.ecartDistance)}) ` +
-          `pour ${Math.round(b.dplusM)} m D+ (${pct(b.ecartDplus)}).`;
+          `pour ${Math.round(b.dplusM)} m D+${libre ? '' : ` (${pct(b.ecartDplus)})`}.`;
       return {
         ok: false, loops, startNode: start, stats, suggestion: suggestion ?? undefined,
         message: `Impossible depuis ce départ, même en le décalant de 2 km au plus.${conseil}`,
       };
     }
-    const resume = `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`;
+    const dplusOk = loops.filter((l) => l.dansTolerance).map((l) => Math.round(l.dplusM));
+    const resume = libre
+      ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (±5 %), de ${Math.min(...dplusOk)} à ${Math.max(...dplusOk)} m D+ : à toi de choisir.`
+      : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`;
     if (decale) {
       const dx = g.x[start] - g.x[demande];
       const dy = g.y[start] - g.y[demande];
@@ -445,7 +453,8 @@ export class LoopGenerator {
  * proche de la cible, arrondie (arrondiDplus). Une
  * boucle explorée l'atteint : la redemander a de bonnes chances d'aboutir.
  */
-function suggererDplus(cands: Candidate[], t: { d: number; h: number }): LoopResponse['suggestion'] | null {
+function suggererDplus(cands: Candidate[], h: number, d: number): LoopResponse['suggestion'] | null {
+  const t = { d, h };
   const dp = cands.filter((c) => Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE).map((c) => c.dplusM);
   if (dp.length === 0) return null;
   const min = Math.min(...dp);
@@ -513,8 +522,14 @@ export function couperDemiTours(g: Graph, edges: number[], dirs: number[], minM:
   }
 }
 
-function dansTolerance(c: { distanceM: number; dplusM: number }, t: { d: number; h: number }) {
-  return Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE && Math.abs(c.dplusM - t.h) / t.h <= TOL_DPLUS;
+/** Distance (m) et D+ (m) visés ; h null : D+ libre, seule la distance compte. */
+export interface Cible {
+  d: number;
+  h: number | null;
+}
+
+function dansTolerance(c: { distanceM: number; dplusM: number }, t: Cible) {
+  return Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE && (t.h == null || Math.abs(c.dplusM - t.h) / t.h <= TOL_DPLUS);
 }
 
 export function jaccard(a: Set<number>, b: Set<number>) {
@@ -538,16 +553,16 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0 };
 }
 
-function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: { d: number; h: number }) {
+function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {
   const ed = Math.abs(m.distanceM - t.d) / t.d / TOL_DISTANCE;
-  const eh = Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
+  const eh = t.h == null ? 0 : Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
   // Au-delà de la tolérance, l'écart pèse davantage : on préfère deux
   // écarts modérés à un critère respecté et l'autre très loin.
   const f = (x: number) => (x <= 1 ? x : 1 + 2 * (x - 1));
   return f(ed) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
 }
 
-export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: { d: number; h: number }): Loop {
+export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
   const coords: [number, number, number][] = [];
   const first = c.dirs[0] ? g.a[c.edges[0]] : g.b[c.edges[0]];
   coords.push([g.lat[first], g.lon[first], g.ele[first]]);
@@ -570,12 +585,12 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: { d: number; h: 
     cumul.push(cumul[i - 1] + haversine(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]));
   }
   const ecartDistance = (c.distanceM - t.d) / t.d;
-  const ecartDplus = (c.dplusM - t.h) / t.h;
+  const ecartDplus = t.h == null ? 0 : (c.dplusM - t.h) / t.h;
   return {
     edges: c.edges, dirs: c.dirs, distanceM: c.distanceM, dplusM: c.dplusM,
     ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
-    dansTolerance: Math.abs(ecartDistance) <= TOL_DISTANCE && Math.abs(ecartDplus) <= TOL_DPLUS,
+    dansTolerance: dansTolerance(c, t),
     coords, cumul,
   };
 }

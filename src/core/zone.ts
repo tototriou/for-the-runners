@@ -26,7 +26,8 @@ export interface ZoneRequest {
   distanceKm: number;
   terrain: Terrain;
   zone: Zone;
-  dplusM: number;
+  /** D+ visé ; absent : D+ libre, seule la distance compte. */
+  dplusM?: number;
   /** Répéter la même côte (aller-retour) est permis. */
   allersRetours?: boolean;
   seed?: number;
@@ -129,7 +130,7 @@ export class ZoneGenerator {
 
     // Coûts : relief attiré, arêtes hors zone interdites (ou chères pour
     // l'accès si le départ est dehors).
-    const cible = Math.max(req.dplusM, 1);
+    const cible = req.dplusM == null || Number.isNaN(req.dplusM) ? null : Math.max(req.dplusM, 1);
     const couts = BETAS.map((beta) => {
       const { cost, minFactor } = coutsAretes(g, beta, req.terrain);
       const proche = (n: number) => (g.x[n] - g.x[start]) ** 2 + (g.y[n] - g.y[start]) ** 2 <= ACCES_M ** 2;
@@ -225,8 +226,10 @@ export class ZoneGenerator {
         }
         // La montée suivante vise la pente qu'il reste à faire (la moitié du
         // chemin monte, l'autre descend).
-        const penteVisee = (2 * Math.max(0, cible - dplus)) / Math.max(reste, 1);
-        const prochain = choisirPenteVisee(possibles, cur, versHaut, penteVisee, g, dist, rand);
+        // D+ libre : point tiré au hasard, sans viser de pente.
+        const prochain = cible == null
+          ? possibles[Math.floor(rand() * possibles.length)]
+          : choisirPenteVisee(possibles, cur, versHaut, (2 * Math.max(0, cible - dplus)) / Math.max(reste, 1), g, dist, rand);
         if (!aller(prochain)) break;
         versHaut = !versHaut;
       }
@@ -241,7 +244,7 @@ export class ZoneGenerator {
     }
 
     const dansTol = (c: { distanceM: number; dplusM: number }) =>
-      Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS;
+      Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
     cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || a.score - b.score);
     const choisies: { c: Cand; set: Set<number> }[] = [];
     for (const c of cands) {
@@ -260,13 +263,15 @@ export class ZoneGenerator {
       l.partZone = dansZone / c.distanceM;
       return l;
     });
+    // D+ libre : du plus roulant au plus vallonné, pour choisir.
+    if (cible == null) loops.sort((a, b) => Number(b.dansTolerance) - Number(a.dansTolerance) || a.dplusM - b.dplusM);
     const nOk = loops.filter((l) => l.dansTolerance).length;
     const zoneTxt = zone.kind === 'cercle' ? `à moins de ${(zone.rayonM / 1000).toFixed(1).replace('.', ',')} km du départ` : 'dans la zone dessinée';
     const zonePct = `${Math.round(loops[0].partZone! * 100)} % dans la zone`;
     if (nOk === 0) {
       return {
         ok: false, loops, startNode: start, stats,
-        message: `Aucune boucle de ${req.distanceKm} km (±5 %) et ${cible} m D+ (±15 %) n’a été trouvée ${zoneTxt}. ` +
+        message: `Aucune boucle de ${req.distanceKm} km (±5 %)${cible != null ? ` et ${cible} m D+ (±15 %)` : ''} n’a été trouvée ${zoneTxt}. ` +
           `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km et ${Math.round(loops[0].dplusM)} m D+. ` +
           (departDedans
             ? 'Agrandis la zone, ou change la distance ou le D+.'
@@ -275,15 +280,17 @@ export class ZoneGenerator {
     }
     return {
       ok: true, loops, startNode: start, stats,
-      message: `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
+      message: cible == null
+        ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (±5 %) ${zoneTxt}, de ${Math.round(Math.min(...loops.filter((l) => l.dansTolerance).map((l) => l.dplusM)))} à ${Math.round(Math.max(...loops.filter((l) => l.dansTolerance).map((l) => l.dplusM)))} m D+ : à toi de choisir (${zonePct} pour la première).`
+        : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
     };
   }
 }
 
 /** Score du mode normal : écarts relatifs aux tolérances, allers-retours. */
-function scoreCible(m: { distanceM: number; dplusM: number; allerRetour: number }, t: { d: number; h: number }) {
+function scoreCible(m: { distanceM: number; dplusM: number; allerRetour: number }, t: { d: number; h: number | null }) {
   const ed = Math.abs(m.distanceM - t.d) / t.d / TOL_DISTANCE;
-  const eh = Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
+  const eh = t.h == null ? 0 : Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
   const f = (x: number) => (x <= 1 ? x : 1 + 2 * (x - 1));
   return f(ed) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
 }
