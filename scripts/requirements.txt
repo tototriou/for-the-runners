@@ -5,3 +5,4 @@ fsspec
 aiohttp
 pyproj
 py7zr
+shapely
