@@ -166,7 +166,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   for (const k of criteres) console.log(`  ${k.ok ? 'OK ' : 'KO '} ${k.nom} : ${k.valeur} (seuil ${k.seuil})`);
   if (tMoy > CIBLE_TEMPS_MS) console.log(`  Note : temps moyen au-dessus de la cible de ${CIBLE_TEMPS_MS / 1000} s.`);
   const compo = composition.map((v) => v / Math.max(1, nbBoucles));
-  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
+  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; sans voitures ${((compo[3] + compo[4]) * 100).toFixed(1)} % ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
   return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax, composition: compo, grandesRoutes1km, nbBoucles };
 }
 
@@ -311,6 +311,7 @@ Composition des boucles proposées (part moyenne de la distance) :
 | Voies | Part |
 | --- | --- |
 ${FAMILLES.map(([n], k) => `| ${n} | ${(j.composition[k] * 100).toFixed(1)} % |`).join('\n')}
+| **Total sans voitures** (pistes, piétonnes, sentiers) | ${((j.composition[3] + j.composition[4]) * 100).toFixed(1)} % |
 
 Boucles avec au moins 1 km de grande route : ${j.grandesRoutes1km} sur ${j.nbBoucles}.
 
