@@ -83,7 +83,14 @@ export class Router {
     this.heap = new Heap(1024);
   }
 
-  /** Arêtes orientées du chemin s → t, ou null si t est inatteignable. */
+  /**
+   * Arêtes orientées du chemin s → t, ou null si t est inatteignable.
+   *
+   * Avec `arrivee`, le chemin peut s'arrêter sur tout nœud à moins de
+   * `rayon` m de t (à vol d'oiseau), l'écart restant coûtant `prixM` par
+   * mètre : on s'arrête avant t quand y aller coûte plus cher que l'écart.
+   * L'heuristique (écart au disque × minFactor) reste admissible.
+   */
   route(
     s: number,
     t: number,
@@ -91,6 +98,7 @@ export class Router {
     minFactor: number,
     used: Uint16Array,
     reusePenalty: number,
+    arrivee?: { rayon: number; prixM: number },
   ): { edges: number[]; nodes: number[] } | null {
     const g = this.g;
     const gen = ++this.gen;
@@ -98,17 +106,33 @@ export class Router {
     heap.clear();
     const tx = g.x[t];
     const ty = g.y[t];
+    const rayon = arrivee?.rayon ?? 0;
+    const h = (v: number) => Math.max(0, Math.hypot(g.x[v] - tx, g.y[v] - ty) - rayon) * minFactor;
+    // Meilleure arrivée trouvée (nœud, coût chemin + écart).
+    let fin = -1;
+    let coutFin = Infinity;
     this.dist[s] = 0;
     this.stamp[s] = gen;
     this.prevEdge[s] = -1;
-    heap.push(s, Math.hypot(g.x[s] - tx, g.y[s] - ty) * minFactor);
+    heap.push(s, h(s));
     this.settled = 0;
     while (heap.size > 0) {
       const u = heap.pop();
+      if (heap.lastKey >= coutFin) break;
       if (this.done[u] === gen) continue;
       this.done[u] = gen;
       this.settled++;
-      if (u === t) break;
+      if (u === t) {
+        if (this.dist[u] < coutFin) fin = u;
+        break;
+      }
+      if (arrivee) {
+        const ecart = Math.hypot(g.x[u] - tx, g.y[u] - ty);
+        if (ecart <= rayon && this.dist[u] + ecart * arrivee.prixM < coutFin) {
+          coutFin = this.dist[u] + ecart * arrivee.prixM;
+          fin = u;
+        }
+      }
       const du = this.dist[u];
       for (let k = g.adjStart[u], end = g.adjStart[u + 1]; k < end; k++) {
         const v = g.adjTo[k];
@@ -123,14 +147,14 @@ export class Router {
           this.dist[v] = nd;
           this.prevEdge[v] = e;
           this.prevNode[v] = u;
-          heap.push(v, nd + Math.hypot(g.x[v] - tx, g.y[v] - ty) * minFactor);
+          heap.push(v, nd + h(v));
         }
       }
     }
-    if (this.done[t] !== gen) return null;
+    if (fin < 0) return null;
     const edges: number[] = [];
-    const nodes: number[] = [t];
-    for (let v = t; v !== s; v = this.prevNode[v]) {
+    const nodes: number[] = [fin];
+    for (let v = fin; v !== s; v = this.prevNode[v]) {
       edges.push(this.prevEdge[v]);
       nodes.push(this.prevNode[v]);
     }

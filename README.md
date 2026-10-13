@@ -33,7 +33,13 @@ y est compte moitié moins, et parmi les boucles possibles, les plus vertes
 sont proposées d'abord. Elles n'ont aucun demi-tour de moins de 1 km : pas
 d'aller au bout d'une rue pour en revenir. Chaque boucle indique sa part sans
 voitures, sa part dans les parcs (à partir de 5 %) et sa distance sur grande
-route. Si aucune boucle
+route.
+
+**Arrivée.** Par défaut, l'arrivée peut se trouver jusqu'à 400 m du départ
+(case « Arrivée jusqu'à 400 m du départ ») : la boucle s'arrête avant quand
+le retour passerait par des rues ou ferait un grand détour. L'écart est
+affiché sur la boucle et l'arrivée marquée sur la carte. Case décochée, ou
+avec une zone, la boucle revient au départ. Si aucune boucle
 ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 2 km et l'affiche en orange, relié au point demandé. Si c'est encore
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton

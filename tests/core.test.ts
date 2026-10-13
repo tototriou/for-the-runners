@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
 import { couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
+import { Router } from '../src/core/router';
 import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
 
@@ -60,7 +61,8 @@ function grille(n = 30, pas = 100): Graph {
 }
 
 /** Vérifie qu'une boucle est un chemin continu qui revient à son départ. */
-function verifierBoucle(g: Graph, loop: Loop) {
+/** Boucle continue, mesures exactes ; arrivée sur le départ, ou à moins de `ecartMaxM`. */
+function verifierBoucle(g: Graph, loop: Loop, ecartMaxM = 0) {
   let noeud = loop.dirs[0] ? g.a[loop.edges[0]] : g.b[loop.edges[0]];
   const depart = noeud;
   let distance = 0;
@@ -72,10 +74,13 @@ function verifierBoucle(g: Graph, loop: Loop) {
     distance += g.len[e];
     dplus += loop.dirs[i] ? g.upAB[e] : g.upBA[e];
   });
-  expect(noeud).toBe(depart);
+  if (ecartMaxM === 0) {
+    expect(noeud).toBe(depart);
+    expect(loop.coords[0]).toEqual(loop.coords[loop.coords.length - 1]);
+  }
+  expect(loop.ecartArriveeM).toBeLessThanOrEqual(ecartMaxM + 1);
   expect(loop.distanceM).toBeCloseTo(distance, 6);
   expect(loop.dplusM).toBeCloseTo(dplus, 6);
-  expect(loop.coords[0]).toEqual(loop.coords[loop.coords.length - 1]);
 }
 
 describe('decodeGraph', () => {
@@ -255,6 +260,33 @@ describe('Boucles dans une zone (grille synthétique)', () => {
     const r = gen.generate({ ...depart, distanceKm: 3, dplusM: 60, terrain: 'mixte', zone });
     expect(r.loops.length).toBeGreaterThan(0);
     expect(r.message).not.toMatch(/presque aucun chemin/);
+  });
+});
+
+describe('arrivée à distance du départ', () => {
+  const g = grille(30, 100);
+  const cout = Float64Array.from(g.len);
+  const used = new Uint16Array(g.m);
+  const t = 15 * 30 + 15;
+  const ecart = (u: number) => Math.hypot(g.x[u] - g.x[t], g.y[u] - g.y[t]);
+
+  it('s’arrête avant quand l’écart coûte moins que le chemin restant', () => {
+    const r = new Router(g).route(0, t, cout, 1, used, 0, { rayon: 400, prixM: 0.5 })!;
+    const fin = r.nodes[r.nodes.length - 1];
+    expect(fin).not.toBe(t);
+    expect(ecart(fin)).toBeLessThanOrEqual(400);
+  });
+
+  it('va jusqu’au départ quand l’écart coûte plus', () => {
+    const r = new Router(g).route(0, t, cout, 1, used, 0, { rayon: 400, prixM: 2 })!;
+    expect(r.nodes[r.nodes.length - 1]).toBe(t);
+  });
+
+  it('boucles : arrivée à 400 m au plus, ou fermées sans l’option', () => {
+    const gen = new LoopGenerator(g);
+    const req = { lat: g.lat[t], lon: g.lon[t], distanceKm: 4, terrain: 'mixte' as const, seed: 3 };
+    for (const l of gen.generate({ ...req, arriveeM: 400 }).loops) verifierBoucle(g, l, 400);
+    for (const l of gen.generate(req).loops) verifierBoucle(g, l);
   });
 });
 

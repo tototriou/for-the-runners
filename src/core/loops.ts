@@ -29,6 +29,8 @@ export interface LoopRequest {
   seed?: number;
   /** Chercher un autre départ à moins de 2 km si rien n'est possible (défaut : oui). */
   elargir?: boolean;
+  /** Distance tolérée entre l'arrivée et le départ, en m (défaut 0 : boucle fermée). */
+  arriveeM?: number;
 }
 
 export interface Loop {
@@ -50,6 +52,8 @@ export interface Loop {
   sansVoitureM: number;
   /** Distance dans les parcs et jardins publics, en mètres. */
   parcM: number;
+  /** Distance à vol d'oiseau entre l'arrivée et le départ, en mètres. */
+  ecartArriveeM: number;
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -173,6 +177,14 @@ const FACTEUR_VOITURES = 2;
  */
 const BONUS_PARC = 0.5;
 const POIDS_PARC_CHOIX = 2;
+/**
+ * Coût d'un mètre d'écart entre l'arrivée et le départ, quand il est toléré :
+ * celui d'un mètre de rue. L'arrivée s'arrête avant le départ quand le retour
+ * passerait par des rues ou ferait un détour de plus du double. Mesuré sur 10
+ * départs × 3 distances : 1 donne 243 m d'écart moyen pour +0,8 point sans
+ * voitures, 2 donne 115 m pour +0,6, 3 donne 70 m pour +0,1.
+ */
+const PRIX_ECART_ARRIVEE = 2;
 /** Clé du choix final : entre deux boucles du même groupe, la plus verte passe devant. */
 export const cleChoix = (c: { score: number; partParc: number }) => c.score - POIDS_PARC_CHOIX * c.partParc;
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
@@ -214,6 +226,9 @@ export class LoopGenerator {
   routes = 0;
   /** Nœuds explorés par A* depuis le début de la demande : mesure du travail. */
   travail = 0;
+
+  /** Distance tolérée entre l'arrivée et le départ de la demande en cours. */
+  private arriveeM = 0;
 
   /** Budget de travail épuisé : on ne lance plus de nouvelle candidate. */
   private budget = BUDGET_TRAVAIL;
@@ -268,7 +283,9 @@ export class LoopGenerator {
     for (let i = 0; i + 1 < pts.length; i++) {
       if (pts[i] === pts[i + 1]) continue;
       this.routes++;
-      const r = this.router.route(pts[i], pts[i + 1], cost, Math.max(minFactor, POIDS_HEURISTIQUE_MIN), used, PENALITE_REUSE);
+      // Dernier tronçon : l'arrivée peut s'arrêter avant le départ.
+      const arrivee = i + 2 === pts.length && this.arriveeM > 0 ? { rayon: this.arriveeM, prixM: PRIX_ECART_ARRIVEE } : undefined;
+      const r = this.router.route(pts[i], pts[i + 1], cost, Math.max(minFactor, POIDS_HEURISTIQUE_MIN), used, PENALITE_REUSE, arrivee);
       this.travail += this.router.settled;
       if (!r) {
         ok = false;
@@ -388,6 +405,7 @@ export class LoopGenerator {
     this.routes = 0;
     this.travail = 0;
     this.budget = BUDGET_TRAVAIL;
+    this.arriveeM = Math.max(0, req.arriveeM ?? 0);
     const vide = (message: string, startNode = -1): LoopResponse => ({
       ok: false, loops: [], message, startNode,
       stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },
@@ -626,6 +644,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
     ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
     parcM: c.edges.reduce((s, e) => s + g.parc[e] * g.len[e], 0),
+    ecartArriveeM: haversine(coords[0][0], coords[0][1], coords[coords.length - 1][0], coords[coords.length - 1][1]),
     sansVoitureM: c.edges.reduce((s, e) => s + (CODES_SANS_VOITURE.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: dansTolerance(c, t),
     coords, cumul,

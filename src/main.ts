@@ -26,6 +26,9 @@ const rayonInput = $<HTMLInputElement>('rayon');
 const dessinBox = $<HTMLElement>('dessin-box');
 const boutonDessiner = $<HTMLButtonElement>('dessiner');
 const allersRetours = $<HTMLInputElement>('allers-retours');
+const arriveeLibre = $<HTMLInputElement>('arrivee-libre');
+/** Écart toléré entre l'arrivée et le départ, case cochée. */
+const ARRIVEE_M = 400;
 const hint = $<HTMLElement>('hint');
 
 const map = L.map('map', { zoomControl: true });
@@ -38,6 +41,8 @@ let depart: L.LatLng | null = null;
 // Cercle plutôt que L.marker : l'icône par défaut de Leaflet pointe vers des
 // images que le bundler ne résout pas.
 const marqueur = L.circleMarker([0, 0], { radius: 8, color: '#ffffff', weight: 3, fillColor: '#15803d', fillOpacity: 1 });
+const arrivee = L.circleMarker([0, 0], { radius: 6, color: '#15803d', weight: 3, fillColor: '#ffffff', fillOpacity: 1, interactive: false })
+  .bindTooltip('Arrivée');
 const calques = L.layerGroup().addTo(map);
 // Zone choisie, à part : elle reste affichée entre deux calculs.
 const calqueZone = L.layerGroup().addTo(map);
@@ -79,6 +84,8 @@ function majFormulaire() {
   $('rayon-label').hidden = zoneType.value !== 'cercle';
   dessinBox.hidden = zoneType.value !== 'polygone';
   $('allers-retours-label').hidden = !zoneActive();
+  // La boucle en zone reste fermée.
+  $('arrivee-label').hidden = zoneActive();
   if (zoneType.value !== 'polygone') arreterDessin();
   majZone();
 }
@@ -111,6 +118,7 @@ boutonDessiner.addEventListener('click', () => {
   pointsZone = [];
   // Les boucles précédentes sont cliquables et intercepteraient les touches.
   calques.clearLayers();
+  arrivee.remove();
   results.replaceChildren();
   profileBox.hidden = true;
   boutonDessiner.setAttribute('aria-pressed', 'true');
@@ -253,7 +261,7 @@ form.addEventListener('submit', (e) => {
   worker.postMessage({
     type: 'generate',
     id: ++idReq,
-    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain },
+    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, arriveeM: arriveeLibre.checked ? ARRIVEE_M : 0 },
   });
 });
 
@@ -263,6 +271,7 @@ function pct(x: number) {
 
 function afficher(res: Reponse) {
   calques.clearLayers();
+  arrivee.remove();
   results.replaceChildren();
   lignes = [];
   boucles = res.loops;
@@ -301,6 +310,8 @@ function afficher(res: Reponse) {
         <span class="${Math.abs(loop.ecartDistance) <= 0.05 ? 'ok' : 'ko'}">dist. ${pct(loop.ecartDistance)}</span> ·
         ${dernierLibre ? '' : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·`}
         aller-retour ${(loop.allerRetour * 100).toFixed(0)} % · ${Math.round((loop.sansVoitureM / loop.distanceM) * 100)} % sans voitures${
+          loop.ecartArriveeM >= 50 ? ` · arrivée à ${Math.round(loop.ecartArriveeM / 10) * 10} m du départ` : ''
+        }${
           loop.parcM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.parcM / loop.distanceM) * 100)} % dans les parcs` : ''
         }${
           loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
@@ -339,6 +350,13 @@ function afficher(res: Reponse) {
 function selectionner(i: number) {
   lignes.forEach((l, k) => l.setStyle({ opacity: k === i ? 0.95 : 0.35, weight: k === i ? 5 : 3 }));
   lignes[i].bringToFront();
+  // Arrivée distincte du départ : marquée sur la carte.
+  arrivee.remove();
+  const loop = boucles[i];
+  if (loop.ecartArriveeM >= 50) {
+    const [la, lo] = loop.coords[loop.coords.length - 1];
+    arrivee.setLatLng([la, lo]).addTo(map);
+  }
   [...results.children].forEach((li, k) => li.setAttribute('aria-selected', String(k === i)));
   dessinerProfil(boucles[i]);
 }
