@@ -39,6 +39,8 @@ const jeuDemande = process.argv.includes('--jeu') ? process.argv[process.argv.in
 // Graine du générateur : la même que l'app par défaut ; SEED=… pour vérifier
 // que le taux de réussite ne tient pas à un tirage chanceux.
 const SEED = Number(process.env.SEED ?? 12345);
+/** Arrivée jusqu'à 400 m du départ : le réglage par défaut de l'app. */
+const ARRIVEE_M = 400;
 
 const gen = new Generateur(chargerStore());
 
@@ -46,7 +48,7 @@ interface Critere { nom: string; seuil: string; valeur: string; ok: boolean }
 interface ResultatJeu {
   id: string; titre: string; description: string; criteres: Critere[]; echecs: string[];
   /** Part moyenne de distance par famille de voie, et boucles avec ≥ 1 km de grande route. */
-  composition: number[]; grandesRoutes1km: number; nbBoucles: number; parc: number;
+  composition: number[]; grandesRoutes1km: number; nbBoucles: number; parc: number; ecartArrivee: number;
   lignes: string[]; reponses: { c: Cas; r: LoopResponse }[]; msChargementMax: number;
 }
 
@@ -78,11 +80,12 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   let grandesRoutes1km = 0;
   const composition = new Array(FAMILLES.length).fill(0);
   let parc = 0;
+  let ecartArrivee = 0;
   let suggereesOk = 0;
   let msChargementMax = 0;
   process.stdout.write(`${titre} : `);
   for (const c of cas) {
-    const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, seed: SEED });
+    const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, seed: SEED, arriveeM: ARRIVEE_M });
     msChargementMax = Math.max(msChargementMax, gen.msChargement);
     reponses.push({ c, r });
     temps.push(r.stats.ms);
@@ -103,6 +106,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
         parFamille.forEach((v, k) => (composition[k] += v / l.distanceM));
         if (parFamille[0] >= 1000) grandesRoutes1km++;
         parc += l.parcM / l.distanceM;
+        ecartArrivee += l.ecartArriveeM;
       }
     }
     const b = r.loops[0];
@@ -119,7 +123,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
       let suivi = '';
       if (r.suggestion) {
         suggerees++;
-        const r2 = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: r.suggestion.dplusM, terrain: c.terrain, seed: SEED });
+        const r2 = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: r.suggestion.dplusM, terrain: c.terrain, seed: SEED, arriveeM: ARRIVEE_M });
         const ok2 = r2.loops.some((l) => l.dansTolerance);
         if (ok2) suggereesOk++;
         suivi = ` → suggestion ${r.suggestion.dplusM} m suivie : ${ok2 ? 'aboutit' : '**n\u2019aboutit pas**'}`;
@@ -168,8 +172,8 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   for (const k of criteres) console.log(`  ${k.ok ? 'OK ' : 'KO '} ${k.nom} : ${k.valeur} (seuil ${k.seuil})`);
   if (tMoy > CIBLE_TEMPS_MS) console.log(`  Note : temps moyen au-dessus de la cible de ${CIBLE_TEMPS_MS / 1000} s.`);
   const compo = composition.map((v) => v / Math.max(1, nbBoucles));
-  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; sans voitures ${((compo[3] + compo[4]) * 100).toFixed(1)} % ; dans les parcs ${((parc / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
-  return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax, composition: compo, grandesRoutes1km, nbBoucles, parc: parc / Math.max(1, nbBoucles) };
+  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; sans voitures ${((compo[3] + compo[4]) * 100).toFixed(1)} % ; dans les parcs ${((parc / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; arrivée à ${Math.round(ecartArrivee / Math.max(1, nbBoucles))} m du départ en moyenne ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
+  return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax, composition: compo, grandesRoutes1km, nbBoucles, parc: parc / Math.max(1, nbBoucles), ecartArrivee: ecartArrivee / Math.max(1, nbBoucles) };
 }
 
 // ------------------------------------------------------------------- jeux
@@ -258,7 +262,7 @@ if (!jeuDemande || jeuDemande === 'annecy') {
     let verdict: string;
     let message = '';
     try {
-      const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain });
+      const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, arriveeM: ARRIVEE_M });
       message = r.message;
       // Une cible impossible depuis le point exact mais réalisable à moins
       // de 2 km n'est pas une cible impossible pour l'app.
@@ -316,7 +320,7 @@ ${FAMILLES.map(([n], k) => `| ${n} | ${(j.composition[k] * 100).toFixed(1)} % |`
 | **Total sans voitures** (pistes, piétonnes, sentiers) | ${((j.composition[3] + j.composition[4]) * 100).toFixed(1)} % |
 | Dans les parcs et jardins publics (toutes voies) | ${(j.parc * 100).toFixed(1)} % |
 
-Boucles avec au moins 1 km de grande route : ${j.grandesRoutes1km} sur ${j.nbBoucles}.
+Boucles avec au moins 1 km de grande route : ${j.grandesRoutes1km} sur ${j.nbBoucles}. Arrivée à ${Math.round(j.ecartArrivee)} m du départ en moyenne (400 m tolérés).
 
 <details><summary>Cas en échec (${j.echecs.length}) et détail des demandes</summary>
 
