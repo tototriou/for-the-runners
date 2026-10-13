@@ -300,7 +300,7 @@ function afficher(res: Reponse) {
       <span class="gaps">
         <span class="${Math.abs(loop.ecartDistance) <= 0.05 ? 'ok' : 'ko'}">dist. ${pct(loop.ecartDistance)}</span> ·
         ${dernierLibre ? '' : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·`}
-        aller-retour ${(loop.allerRetour * 100).toFixed(0)} %${
+        aller-retour ${(loop.allerRetour * 100).toFixed(0)} % · ${Math.round((loop.sansVoitureM / loop.distanceM) * 100)} % sans voitures${
           loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
         }${
           loop.grandesRoutesM >= 100

@@ -46,6 +46,8 @@ export interface Loop {
   partZone?: number;
   /** Distance sur grande route (principale, départementale), en mètres. */
   grandesRoutesM: number;
+  /** Distance sur voies interdites aux voitures, en mètres. */
+  sansVoitureM: number;
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -143,7 +145,20 @@ const FACTEUR_CLASSE: Partial<Record<(typeof CLASSES)[number], number>> = {
   secondary: 4,
   tertiary: 1.5,
 };
-const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) => FACTEUR_CLASSE[CLASSES[k]] ?? 1);
+/** Voies interdites aux voitures (voies vertes, pistes cyclables, piétonnes, sentiers). */
+export const VOIES_SANS_VOITURE: readonly (typeof CLASSES)[number][] = [
+  'pedestrian', 'cycleway', 'path', 'track', 'footway', 'steps', 'bridleway',
+];
+export const CODES_SANS_VOITURE = new Set(VOIES_SANS_VOITURE.map((c) => CLASSES.indexOf(c)));
+/**
+ * Toute voie ouverte aux voitures coûte en plus 2 fois sa longueur : un
+ * détour par une voie verte ou un sentier est préféré jusqu'au double de la
+ * distance. Mesuré (×1 à ×3, 3 graines) : de 56-59 % à 68-74 % de la distance
+ * sans voitures ; au-delà de ×2, Annecy passe sous 80 % dans la tolérance.
+ */
+const FACTEUR_VOITURES = 2;
+const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
+  CODES_SANS_VOITURE.has(k) ? 1 : (FACTEUR_CLASSE[CLASSES[k]] ?? 1) * FACTEUR_VOITURES);
 /** Classes comptées comme « grande route » dans les boucles affichées. */
 export const CODES_GRANDES_ROUTES = new Set([CLASSES.indexOf('primary'), CLASSES.indexOf('secondary')]);
 
@@ -590,6 +605,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
     edges: c.edges, dirs: c.dirs, distanceM: c.distanceM, dplusM: c.dplusM,
     ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
+    sansVoitureM: c.edges.reduce((s, e) => s + (CODES_SANS_VOITURE.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: dansTolerance(c, t),
     coords, cumul,
   };

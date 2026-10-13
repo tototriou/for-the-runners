@@ -24,11 +24,13 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 3. « Générer les boucles » : 3 à 5 boucles, avec leurs écarts à la cible, le
    tracé et le profil. Le bouton GPX télécharge la boucle pour une montre.
 
-Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Les boucles évitent
-les grandes routes (principales et départementales, 4 fois plus coûteuses
-dans le calcul) et n'ont aucun demi-tour de moins de 1 km : pas d'aller au
-bout d'une rue pour en revenir. Chaque boucle indique sa distance sur grande
-route. Si aucune boucle
+Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Les boucles
+privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
+piétonnes, chemins et sentiers) : toute voie ouverte aux voitures compte
+double dans le calcul, les grandes routes (principales et départementales)
+8 fois. Elles n'ont aucun demi-tour de moins de 1 km : pas d'aller au bout
+d'une rue pour en revenir. Chaque boucle indique sa part sans voitures et sa
+distance sur grande route. Si aucune boucle
 ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 2 km et l'affiche en orange, relié au point demandé. Si c'est encore
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
