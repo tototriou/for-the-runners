@@ -140,7 +140,8 @@ worker.onmessage = (ev: MessageEvent) => {
       selectRegion.appendChild(opt);
     }
     choisirRegion(regions[0].id);
-    departDepuisAdresse();
+    // Un lien ?depart= l'emporte ; sinon, la position du coureur.
+    if (!departDepuisAdresse()) allerAMaPosition(false);
     $('zone-info').textContent = `Régions couvertes : ${regions.map((r) => r.name).join(', ')}`;
     $('credits').innerHTML =
       `Réseau : ${regions[0].reseau}.<br>Altitude : ${regions[0].mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
@@ -163,16 +164,53 @@ let regions: RegionMeta[] = [];
 const selectRegion = $<HTMLSelectElement>('region');
 selectRegion.addEventListener('change', () => choisirRegion(selectRegion.value));
 
-/** `?depart=lat,lon` : départ posé à l'ouverture (lien partagé). */
-function departDepuisAdresse() {
+const regionDe = (lat: number, lon: number) =>
+  regions.find(({ bbox: [x0, y0, x1, y1] }) => lon >= x0 && lon <= x1 && lat >= y0 && lat <= y1);
+
+/** `?depart=lat,lon` : départ posé à l'ouverture (lien partagé). Vrai si appliqué. */
+function departDepuisAdresse(): boolean {
   const v = new URLSearchParams(location.search).get('depart');
   const [lat, lon] = (v ?? '').split(',').map(Number);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-  const r = regions.find(({ bbox: [x0, y0, x1, y1] }) => lon >= x0 && lon <= x1 && lat >= y0 && lat <= y1);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  const r = regionDe(lat, lon);
   if (r) selectRegion.value = r.id;
   map.setView([lat, lon], 13);
   placerDepart(L.latLng(lat, lon));
+  return true;
 }
+
+/**
+ * Départ à la position du coureur, si le navigateur la donne et qu'elle est
+ * dans une région couverte ; sinon le départ par défaut reste. `demande` :
+ * clic sur « Ma position » (on signale alors un refus ou une erreur).
+ */
+function allerAMaPosition(demande: boolean) {
+  if (!('geolocation' in navigator)) {
+    if (demande) setStatus('Ce navigateur ne donne pas la position.', true);
+    return;
+  }
+  if (demande) setStatus('Recherche de ta position…');
+  navigator.geolocation.getCurrentPosition(
+    ({ coords }) => {
+      const { latitude: lat, longitude: lon } = coords;
+      const r = regionDe(lat, lon);
+      if (!r) {
+        const noms = regions.map((x) => x.name).join(', ');
+        setStatus(`Ta position est hors des régions couvertes (${noms}) : choisis un départ sur la carte.`, true);
+        return;
+      }
+      selectRegion.value = r.id;
+      map.setView([lat, lon], 14);
+      placerDepart(L.latLng(lat, lon));
+      setStatus('Départ placé à ta position.');
+    },
+    () => {
+      if (demande) setStatus('Position indisponible : autorise la localisation pour ce site, ou touche la carte.', true);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+  );
+}
+$<HTMLButtonElement>('ma-position').addEventListener('click', () => allerAMaPosition(true));
 
 function choisirRegion(id: string) {
   const r = regions.find((x) => x.id === id);

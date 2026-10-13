@@ -13,7 +13,10 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 
 ## Utilisation
 
-1. Choisis la région, puis touche la carte pour placer le départ.
+1. À l'ouverture, si le navigateur donne ta position et qu'elle est dans une
+   région couverte, le départ y est placé (bouton « Ma position » pour y
+   revenir). Sinon, choisis la région, puis touche la carte pour placer le
+   départ.
 2. Saisis la distance (km), le D+ (m) et le terrain (mixte, sentiers, route).
    Le D+ est facultatif : laissé vide, l'app propose des boucles de la
    distance demandée, classées du plus roulant au plus vallonné, chacune
@@ -39,7 +42,8 @@ boucle indique sa part dans la zone. Dans une zone, la case « Autoriser les
 allers-retours » permet de répéter la même côte ; sinon, la boucle monte
 par une rue et redescend par la voisine.
 
-Un lien peut fixer le départ : `…/for-the-runners/?depart=45.942,6.115`.
+Un lien peut fixer le départ : `…/for-the-runners/?depart=45.942,6.115` ; il
+l'emporte sur la position du navigateur.
 
 ## Lancer en local
 
