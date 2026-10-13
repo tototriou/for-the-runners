@@ -30,7 +30,7 @@ export interface ZoneDoc {
   };
   nodes: number[];
   nodeEle: number[];
-  edges: { a: number[]; b: number[]; len: number[]; upAB: number[]; upBA: number[]; type: number[]; cls?: number[] };
+  edges: { a: number[]; b: number[]; len: number[]; upAB: number[]; upBA: number[]; type: number[]; cls?: number[]; parc?: number[] };
   geom: number[][];
 }
 
@@ -53,6 +53,8 @@ export interface Graph {
   type: Uint8Array;
   /** Classe Overture (indice dans CLASSES, CLS_INCONNUE si absente). */
   cls: Uint8Array;
+  /** Part de la longueur dans un parc ou jardin public (0 à 1). */
+  parc: Float32Array;
   /** Points intérieurs de l'arête e (sens a → b) : geomOff[e]..geomOff[e+1]. */
   geomOff: Int32Array;
   geomLat: Float64Array;
@@ -101,6 +103,7 @@ export function decodeGraph(doc: ZoneDoc): Graph {
   const upBA = Float64Array.from(E.upBA, (v) => v / 10);
   const type = Uint8Array.from(E.type);
   const cls = E.cls ? Uint8Array.from(E.cls) : new Uint8Array(m).fill(CLS_INCONNUE);
+  const parc = E.parc ? Float32Array.from(E.parc, (v) => v / 100) : new Float32Array(m);
 
   const geomOff = new Int32Array(m + 1);
   for (let e = 0; e < m; e++) geomOff[e + 1] = geomOff[e] + doc.geom[e].length / 3;
@@ -144,7 +147,7 @@ export function decodeGraph(doc: ZoneDoc): Graph {
   }
 
   const g: Graph = {
-    meta: doc.meta, n, m, lat, lon, ele, x, y, a, b, len, upAB, upBA, type, cls,
+    meta: doc.meta, n, m, lat, lon, ele, x, y, a, b, len, upAB, upBA, type, cls, parc,
     geomOff, geomLat, geomLon, geomEle, adjStart, adjEdge, adjTo, adjFwd,
     grid: undefined as unknown as SpatialGrid,
   };

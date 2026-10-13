@@ -28,9 +28,12 @@ Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Les boucles
 privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
 piétonnes, chemins et sentiers) : toute voie ouverte aux voitures compte
 double dans le calcul, les grandes routes (principales et départementales)
-8 fois. Elles n'ont aucun demi-tour de moins de 1 km : pas d'aller au bout
-d'une rue pour en revenir. Chaque boucle indique sa part sans voitures et sa
-distance sur grande route. Si aucune boucle
+8 fois. Elles passent aussi par les parcs et jardins publics : une voie qui
+y est compte moitié moins, et parmi les boucles possibles, les plus vertes
+sont proposées d'abord. Elles n'ont aucun demi-tour de moins de 1 km : pas
+d'aller au bout d'une rue pour en revenir. Chaque boucle indique sa part sans
+voitures, sa part dans les parcs (à partir de 5 %) et sa distance sur grande
+route. Si aucune boucle
 ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 2 km et l'affiche en orange, relié au point demandé. Si c'est encore
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
@@ -90,7 +93,11 @@ Le script :
    de France, repli sur le **SRTM 1"** (tuiles AWS) lissé par un flou
    gaussien ;
 4. calcule pour chaque arête la longueur, le D+ dans chaque sens (altitude
-   tous les 30 m), le type (route ou sentier) et une géométrie simplifiée ;
+   tous les 30 m), le type (route ou sentier), la part de sa longueur dans un
+   parc ou jardin public (couche `land_use` d'Overture : parcs, jardins,
+   espaces verts, sauf accès privé ; un jardin doit avoir un nom ou un accès
+   déclaré ouvert, sinon c'est le plus souvent une cour d'immeuble) et une
+   géométrie simplifiée ;
 5. range chaque arête dans la tuile de son premier nœud et écrit les tuiles
    en JSON compressé. Les nœuds portent un identifiant unique dans la
    région : le navigateur recolle les tuiles sans créer de fausse jonction

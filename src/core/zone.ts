@@ -11,7 +11,7 @@
 
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
 import {
-  BUDGET_TRAVAIL, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
+  BUDGET_TRAVAIL, cleChoix, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
   POIDS_HEURISTIQUE_MIN, rng, SEUIL_ALLER_RETOUR, TOL_DISTANCE, TOL_DPLUS, type Loop, type LoopResponse,
 } from './loops';
 import { Router } from './router';
@@ -96,6 +96,7 @@ interface Cand {
   distanceM: number;
   dplusM: number;
   allerRetour: number;
+  partParc: number;
   score: number;
 }
 
@@ -245,7 +246,7 @@ export class ZoneGenerator {
 
     const dansTol = (c: { distanceM: number; dplusM: number }) =>
       Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
-    cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || a.score - b.score);
+    cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || cleChoix(a) - cleChoix(b));
     const choisies: { c: Cand; set: Set<number> }[] = [];
     for (const c of cands) {
       const set = new Set(c.edges);

@@ -48,6 +48,8 @@ export interface Loop {
   grandesRoutesM: number;
   /** Distance sur voies interdites aux voitures, en mètres. */
   sansVoitureM: number;
+  /** Distance dans les parcs et jardins publics, en mètres. */
+  parcM: number;
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -86,6 +88,8 @@ interface Candidate {
   distanceM: number;
   dplusM: number;
   allerRetour: number;
+  /** Part de la distance dans les parcs et jardins publics. */
+  partParc: number;
   score: number;
 }
 
@@ -157,6 +161,20 @@ export const CODES_SANS_VOITURE = new Set(VOIES_SANS_VOITURE.map((c) => CLASSES.
  * sans voitures ; au-delà de ×2, Annecy passe sous 80 % dans la tolérance.
  */
 const FACTEUR_VOITURES = 2;
+/**
+ * Parcs et jardins publics, à deux étages. Dans le coût, une voie qui y est
+ * entièrement compte moitié moins. Au choix final, chaque point de part dans
+ * les parcs vaut 2 points de score, entre boucles du même groupe (dans la
+ * tolérance ou non) : le taux de réussite n'en dépend pas. Le coût seul ne
+ * suffit pas, la forme de la boucle venant des points de passage. Mesuré sur
+ * 10 départs près de parcs (Paris, Strasbourg, Colmar, Mulhouse, Annecy) :
+ * 26 % de la distance dans les parcs sans rien, 29 % par le coût seul, 38 %
+ * avec le choix (40 % avec un poids de 4, qui laisse passer plus d'allers-retours).
+ */
+const BONUS_PARC = 0.5;
+const POIDS_PARC_CHOIX = 2;
+/** Clé du choix final : entre deux boucles du même groupe, la plus verte passe devant. */
+export const cleChoix = (c: { score: number; partParc: number }) => c.score - POIDS_PARC_CHOIX * c.partParc;
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
   CODES_SANS_VOITURE.has(k) ? 1 : (FACTEUR_CLASSE[CLASSES[k]] ?? 1) * FACTEUR_VOITURES);
 /** Classes comptées comme « grande route » dans les boucles affichées. */
@@ -182,7 +200,7 @@ export function coutsAretes(g: Graph, beta: number, terrain: Terrain) {
     const L = g.len[e];
     const relief = L > 0 ? (g.upAB[e] + g.upBA[e]) / L : 0;
     const fPente = Math.min(5, Math.max(0.2, Math.exp(-beta * relief * 10)));
-    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]];
+    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]] * (1 - BONUS_PARC * g.parc[e]);
     cost[e] = Math.max(L, 0.1) * f;
     if (f < minFactor) minFactor = f;
   }
@@ -415,7 +433,7 @@ export class LoopGenerator {
     // dans la tolérance d'abord : le score peut classer devant elles une
     // boucle hors tolérance (+2 % / +18 % bat 4 % / 13 %), qui l'évinçait.
     const ordre = [...cands].sort(
-      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || x.score - y.score,
+      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x) - cleChoix(y),
     );
     const choisies: { c: Candidate; set: Set<number> }[] = [];
     for (const c of ordre) {
@@ -556,16 +574,18 @@ export function jaccard(a: Set<number>, b: Set<number>) {
 export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   let distanceM = 0;
   let dplusM = 0;
+  let parcM = 0;
   const count = new Map<number, number>();
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     distanceM += g.len[e];
+    parcM += g.len[e] * g.parc[e];
     dplusM += dirs[i] ? g.upAB[e] : g.upBA[e];
     count.set(e, (count.get(e) ?? 0) + 1);
   }
   let rep = 0;
   for (const [e, n] of count) if (n > 1) rep += g.len[e] * n;
-  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0 };
+  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0 };
 }
 
 function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {
@@ -605,6 +625,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
     edges: c.edges, dirs: c.dirs, distanceM: c.distanceM, dplusM: c.dplusM,
     ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
+    parcM: c.edges.reduce((s, e) => s + g.parc[e] * g.len[e], 0),
     sansVoitureM: c.edges.reduce((s, e) => s + (CODES_SANS_VOITURE.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: dansTolerance(c, t),
     coords, cumul,
