@@ -181,7 +181,7 @@ const jeux: ResultatJeu[] = [];
 const regionaux = casRegionaux();
 const definitions: [string, string, string, Cas[]][] = [
   ['annecy', 'Annecy (jeu du cadrage)', '50 demandes : 5 départs × 10 distances de 5 à 30 km, D+ de 50 à 1 500 m. Seuil jugé depuis le point exact, comme au cadrage.', casDeTest()],
-  ['libre', 'Annecy, D+ libre', 'Les 50 demandes du cadrage sans D+ visé : seule la distance compte (±5 %). Seuil jugé depuis le point exact.', casDeTest().map((c) => ({ ...c, dplusM: NaN }))],
+  ['libre', 'Annecy, D+ libre', 'Les 50 demandes du cadrage sans D+ visé : seule la distance compte (±500 m, ou ±5 % au-delà de 10 km). Seuil jugé depuis le point exact.', casDeTest().map((c) => ({ ...c, dplusM: NaN }))],
   ['alsace', 'Alsace', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l\u2019app répond, départ décalé compris.', regionaux.filter((c) => c.region === 'Alsace')],
   ['idf', 'Île-de-France', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l\u2019app répond, départ décalé compris.', regionaux.filter((c) => c.region === 'Île-de-France')],
 ];

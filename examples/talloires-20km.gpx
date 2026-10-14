@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Boucle D+" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata>
-    <name>Talloires 20.1 km 870 m D+</name>
-    <desc>20.07 km, 870 m D+</desc>
+    <name>Talloires 19.6 km 850 m D+</name>
+    <desc>19.64 km, 850 m D+</desc>
   </metadata>
   <trk>
-    <name>Talloires 20.1 km 870 m D+</name>
-    <desc>20.07 km, 870 m D+</desc>
+    <name>Talloires 19.6 km 850 m D+</name>
+    <desc>19.64 km, 850 m D+</desc>
     <type>running</type>
     <trkseg>
       <trkpt lat="45.841230" lon="6.214020"><ele>468</ele></trkpt>
@@ -266,27 +266,6 @@
       <trkpt lat="45.880160" lon="6.229930"><ele>761</ele></trkpt>
       <trkpt lat="45.880250" lon="6.230110"><ele>759</ele></trkpt>
       <trkpt lat="45.880290" lon="6.230160"><ele>758</ele></trkpt>
-      <trkpt lat="45.880400" lon="6.230190"><ele>756</ele></trkpt>
-      <trkpt lat="45.880640" lon="6.230360"><ele>754</ele></trkpt>
-      <trkpt lat="45.880800" lon="6.230530"><ele>752</ele></trkpt>
-      <trkpt lat="45.880810" lon="6.230540"><ele>752</ele></trkpt>
-      <trkpt lat="45.880850" lon="6.230530"><ele>752</ele></trkpt>
-      <trkpt lat="45.880880" lon="6.230530"><ele>752</ele></trkpt>
-      <trkpt lat="45.881070" lon="6.230690"><ele>750</ele></trkpt>
-      <trkpt lat="45.881680" lon="6.230920"><ele>744</ele></trkpt>
-      <trkpt lat="45.881850" lon="6.230890"><ele>741</ele></trkpt>
-      <trkpt lat="45.881980" lon="6.230820"><ele>738</ele></trkpt>
-      <trkpt lat="45.882140" lon="6.230810"><ele>736</ele></trkpt>
-      <trkpt lat="45.882030" lon="6.230920"><ele>737</ele></trkpt>
-      <trkpt lat="45.881900" lon="6.231000"><ele>739</ele></trkpt>
-      <trkpt lat="45.881610" lon="6.231150"><ele>741</ele></trkpt>
-      <trkpt lat="45.881450" lon="6.231160"><ele>743</ele></trkpt>
-      <trkpt lat="45.881240" lon="6.231130"><ele>745</ele></trkpt>
-      <trkpt lat="45.881080" lon="6.231070"><ele>747</ele></trkpt>
-      <trkpt lat="45.881020" lon="6.231020"><ele>747</ele></trkpt>
-      <trkpt lat="45.880810" lon="6.230540"><ele>752</ele></trkpt>
-      <trkpt lat="45.880800" lon="6.230530"><ele>752</ele></trkpt>
-      <trkpt lat="45.880640" lon="6.230360"><ele>754</ele></trkpt>
       <trkpt lat="45.880400" lon="6.230190"><ele>756</ele></trkpt>
       <trkpt lat="45.880410" lon="6.230120"><ele>756</ele></trkpt>
       <trkpt lat="45.880390" lon="6.229920"><ele>756</ele></trkpt>
