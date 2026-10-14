@@ -26,9 +26,6 @@ const rayonInput = $<HTMLInputElement>('rayon');
 const dessinBox = $<HTMLElement>('dessin-box');
 const boutonDessiner = $<HTMLButtonElement>('dessiner');
 const allersRetours = $<HTMLInputElement>('allers-retours');
-const arriveeLibre = $<HTMLInputElement>('arrivee-libre');
-/** Écart toléré entre l'arrivée et le départ, case cochée. */
-const ARRIVEE_M = 400;
 const hint = $<HTMLElement>('hint');
 
 const map = L.map('map', { zoomControl: true });
@@ -84,8 +81,6 @@ function majFormulaire() {
   $('rayon-label').hidden = zoneType.value !== 'cercle';
   dessinBox.hidden = zoneType.value !== 'polygone';
   $('allers-retours-label').hidden = !zoneActive();
-  // La boucle en zone reste fermée.
-  $('arrivee-label').hidden = zoneActive();
   if (zoneType.value !== 'polygone') arreterDessin();
   majZone();
 }
@@ -261,7 +256,7 @@ form.addEventListener('submit', (e) => {
   worker.postMessage({
     type: 'generate',
     id: ++idReq,
-    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, arriveeM: arriveeLibre.checked ? ARRIVEE_M : 0 },
+    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain },
   });
 });
 

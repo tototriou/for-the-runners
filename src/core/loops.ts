@@ -29,7 +29,7 @@ export interface LoopRequest {
   seed?: number;
   /** Chercher un autre départ à moins de 2 km si rien n'est possible (défaut : oui). */
   elargir?: boolean;
-  /** Distance tolérée entre l'arrivée et le départ, en m (défaut 0 : boucle fermée). */
+  /** Distance tolérée entre l'arrivée et le départ, en m (défaut ARRIVEE_M ; 0 : boucle fermée). */
   arriveeM?: number;
 }
 
@@ -184,7 +184,9 @@ const POIDS_PARC_CHOIX = 2;
  * départs × 3 distances : 1 donne 243 m d'écart moyen pour +0,8 point sans
  * voitures, 2 donne 115 m pour +0,6, 3 donne 70 m pour +0,1.
  */
-const PRIX_ECART_ARRIVEE = 2;
+export const PRIX_ECART_ARRIVEE = 2;
+/** L'arrivée peut toujours se trouver jusqu'à 400 m du départ. */
+export const ARRIVEE_M = 400;
 /** Clé du choix final : entre deux boucles du même groupe, la plus verte passe devant. */
 export const cleChoix = (c: { score: number; partParc: number }) => c.score - POIDS_PARC_CHOIX * c.partParc;
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
@@ -405,7 +407,7 @@ export class LoopGenerator {
     this.routes = 0;
     this.travail = 0;
     this.budget = BUDGET_TRAVAIL;
-    this.arriveeM = Math.max(0, req.arriveeM ?? 0);
+    this.arriveeM = Math.max(0, req.arriveeM ?? ARRIVEE_M);
     const vide = (message: string, startNode = -1): LoopResponse => ({
       ok: false, loops: [], message, startNode,
       stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },

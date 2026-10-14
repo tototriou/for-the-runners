@@ -35,11 +35,10 @@ d'aller au bout d'une rue pour en revenir. Chaque boucle indique sa part sans
 voitures, sa part dans les parcs (à partir de 5 %) et sa distance sur grande
 route.
 
-**Arrivée.** Par défaut, l'arrivée peut se trouver jusqu'à 400 m du départ
-(case « Arrivée jusqu'à 400 m du départ ») : la boucle s'arrête avant quand
-le retour passerait par des rues ou ferait un grand détour. L'écart est
-affiché sur la boucle et l'arrivée marquée sur la carte. Case décochée, ou
-avec une zone, la boucle revient au départ. Si aucune boucle
+**Arrivée.** L'arrivée peut toujours se trouver jusqu'à 400 m du départ,
+zone comprise : la boucle s'arrête avant quand le retour passerait par des
+rues ou ferait un grand détour. L'écart est affiché sur la boucle et
+l'arrivée marquée sur la carte. Si aucune boucle
 ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 2 km et l'affiche en orange, relié au point demandé. Si c'est encore
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton

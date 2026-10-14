@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
-import { couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
+import { ARRIVEE_M, couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
 import { Router } from '../src/core/router';
 import { ZoneGenerator } from '../src/core/zone';
@@ -61,8 +61,8 @@ function grille(n = 30, pas = 100): Graph {
 }
 
 /** Vérifie qu'une boucle est un chemin continu qui revient à son départ. */
-/** Boucle continue, mesures exactes ; arrivée sur le départ, ou à moins de `ecartMaxM`. */
-function verifierBoucle(g: Graph, loop: Loop, ecartMaxM = 0) {
+/** Boucle continue, mesures exactes ; arrivée à moins de `ecartMaxM` du départ (0 : sur le départ). */
+function verifierBoucle(g: Graph, loop: Loop, ecartMaxM = ARRIVEE_M) {
   let noeud = loop.dirs[0] ? g.a[loop.edges[0]] : g.b[loop.edges[0]];
   const depart = noeud;
   let distance = 0;
@@ -282,11 +282,11 @@ describe('arrivée à distance du départ', () => {
     expect(r.nodes[r.nodes.length - 1]).toBe(t);
   });
 
-  it('boucles : arrivée à 400 m au plus, ou fermées sans l’option', () => {
+  it('boucles : arrivée à 400 m au plus par défaut, fermées avec arriveeM 0', () => {
     const gen = new LoopGenerator(g);
     const req = { lat: g.lat[t], lon: g.lon[t], distanceKm: 4, terrain: 'mixte' as const, seed: 3 };
-    for (const l of gen.generate({ ...req, arriveeM: 400 }).loops) verifierBoucle(g, l, 400);
-    for (const l of gen.generate(req).loops) verifierBoucle(g, l);
+    for (const l of gen.generate(req).loops) verifierBoucle(g, l, 400);
+    for (const l of gen.generate({ ...req, arriveeM: 0 }).loops) verifierBoucle(g, l, 0);
   });
 });
 

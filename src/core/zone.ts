@@ -11,8 +11,8 @@
 
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
 import {
-  BUDGET_TRAVAIL, cleChoix, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
-  POIDS_HEURISTIQUE_MIN, rng, SEUIL_ALLER_RETOUR, TOL_DISTANCE, TOL_DPLUS, type Loop, type LoopResponse,
+  ARRIVEE_M, BUDGET_TRAVAIL, cleChoix, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
+  POIDS_HEURISTIQUE_MIN, PRIX_ECART_ARRIVEE, rng, SEUIL_ALLER_RETOUR, TOL_DISTANCE, TOL_DPLUS, type Loop, type LoopResponse,
 } from './loops';
 import { Router } from './router';
 
@@ -30,6 +30,8 @@ export interface ZoneRequest {
   dplusM?: number;
   /** Répéter la même côte (aller-retour) est permis. */
   allersRetours?: boolean;
+  /** Distance tolérée entre l'arrivée et le départ, en m (défaut ARRIVEE_M ; 0 : boucle fermée). */
+  arriveeM?: number;
   seed?: number;
 }
 
@@ -124,6 +126,7 @@ export class ZoneGenerator {
       return vide('Point de départ trop loin d’un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
     }
     const D = req.distanceKm * 1000;
+    const arriveeM = Math.max(0, req.arriveeM ?? ARRIVEE_M);
     const zone = req.zone;
     if (zone.kind === 'polygone' && zone.points.length < 3) return vide('La zone dessinée doit avoir au moins 3 points.');
     const dedans = noeudsDansZone(g, start, zone);
@@ -183,9 +186,9 @@ export class ZoneGenerator {
       const detour = () => (volOiseau > 300 ? Math.min(2, Math.max(1.05, cum / volOiseau)) : DETOUR);
       let cur = start;
       let versHaut = g.ele[start] < g.ele[hauts[0]];
-      const aller = (cible: number) => {
+      const aller = (cible: number, arrivee?: { rayon: number; prixM: number }) => {
         routes++;
-        const r = this.router.route(cur, cible, cost, h, this.used, penalite);
+        const r = this.router.route(cur, cible, cost, h, this.used, penalite, arrivee);
         this.travail += this.router.settled;
         if (!r) return false;
         volOiseau += dist(cur, cible);
@@ -197,7 +200,7 @@ export class ZoneGenerator {
           cum += g.len[e];
           dplus += g.a[e] === r.nodes[j] ? g.upAB[e] : g.upBA[e];
         }
-        cur = cible;
+        cur = r.nodes[r.nodes.length - 1];
         return true;
       };
       for (let etape = 0; etape < MAX_ETAPES; etape++) {
@@ -234,7 +237,8 @@ export class ZoneGenerator {
         if (!aller(prochain)) break;
         versHaut = !versHaut;
       }
-      const okRetour = cur === start || aller(start);
+      // Retour : l'arrivée peut s'arrêter avant le départ, comme hors zone.
+      const okRetour = cur === start || aller(start, arriveeM > 0 ? { rayon: arriveeM, prixM: PRIX_ECART_ARRIVEE } : undefined);
       for (const e of edges) this.used[e] = 0;
       if (!okRetour || edges.length === 0) continue;
       if (!req.allersRetours) couperDemiTours(g, edges, dirs, DEMI_TOUR_MIN_M);
