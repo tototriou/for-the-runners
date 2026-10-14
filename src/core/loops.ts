@@ -51,8 +51,8 @@ export interface LoopRequest {
   elargir?: boolean;
   /** Distance tolérée entre l'arrivée et le départ, en m (défaut ARRIVEE_M ; 0 : boucle fermée). */
   arriveeM?: number;
-  /** Faire le tour d'un grand parc proche pendant la boucle. */
-  tourParc?: boolean;
+  /** Tour de parc : permis (défaut, une candidate sur deux), imposé, ou exclu. */
+  tourParc?: 'permis' | 'impose' | 'exclu';
 }
 
 export interface Loop {
@@ -328,8 +328,9 @@ export class LoopGenerator {
   private arriveeM = 0;
   /** Parcs du graphe (calculés à la première demande de tour de parc). */
   private parcs: Parc[] | null = null;
-  /** Parcs dont les boucles de la demande en cours font le tour. */
+  /** Parcs dont les boucles de la demande en cours peuvent faire le tour. */
   private parcsVises: Parc[] = [];
+  private tourParc: 'permis' | 'impose' | 'exclu' = 'permis';
 
   /** Budget de travail épuisé : on ne lance plus de nouvelle candidate. */
   private budget = BUDGET_TRAVAIL;
@@ -539,7 +540,8 @@ export class LoopGenerator {
         vert: rand() < PART_VERTS,
         parc: -1,
       };
-      if (this.parcsVises.length > 0) {
+      // Tour de parc permis : une candidate sur deux, le choix final tranche.
+      if (this.parcsVises.length > 0 && (this.tourParc === 'impose' || i % 2 === 0)) {
         // La boucle passe par le parc : cercle orienté vers lui, assez grand pour l'atteindre.
         const iParc = i % this.parcsVises.length;
         const P = this.parcsVises[iParc];
@@ -630,7 +632,8 @@ export class LoopGenerator {
       return vide('Point de départ trop loin d\u2019un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
     }
     const target: Cible = { d: req.distanceKm * 1000, h: libre ? null : Math.max(req.dplusM!, 1) };
-    this.parcsVises = req.tourParc ? this.choisirParcs(demande, target.d) : [];
+    this.tourParc = req.tourParc ?? 'permis';
+    this.parcsVises = this.tourParc === 'exclu' ? [] : this.choisirParcs(demande, target.d);
     const rand = rng(req.seed ?? 12345);
 
     let start = demande;
@@ -695,7 +698,7 @@ export class LoopGenerator {
     const resume = (libre
       ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (${libelleTolDistance(target.d)}), de ${Math.min(...dplusOk)} à ${Math.max(...dplusOk)} m D+ : à toi de choisir.`
       : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`)
-      + (req.tourParc && this.parcsVises.length === 0 ? ' Aucun grand parc à portée : boucles sans tour de parc.' : '');
+      + (this.tourParc === 'impose' && this.parcsVises.length === 0 ? ' Aucun grand parc à portée : boucles sans tour de parc.' : '');
     if (decale) {
       const dx = g.x[start] - g.x[demande];
       const dy = g.y[start] - g.y[demande];

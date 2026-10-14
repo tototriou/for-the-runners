@@ -363,8 +363,8 @@ describe('données réelles (tuiles d\u2019Annecy)', () => {
     const g = (await store.graphFor(depart.lat, depart.lon, depart.distanceKm))!.graph;
     const gen = new LoopGenerator(g);
     const part = (r: ReturnType<LoopGenerator['generate']>) => r.loops.reduce((s, l) => s + l.parcM / l.distanceM, 0) / r.loops.length;
-    const sans = gen.generate(depart);
-    const avec = gen.generate({ ...depart, tourParc: true });
+    const sans = gen.generate({ ...depart, tourParc: 'exclu' });
+    const avec = gen.generate({ ...depart, tourParc: 'impose' });
     expect(avec.ok).toBe(true);
     for (const l of avec.loops) verifierBoucle(g, l);
     expect(part(avec)).toBeGreaterThan(part(sans));

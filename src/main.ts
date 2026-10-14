@@ -26,7 +26,6 @@ const rayonInput = $<HTMLInputElement>('rayon');
 const dessinBox = $<HTMLElement>('dessin-box');
 const boutonDessiner = $<HTMLButtonElement>('dessiner');
 const allersRetours = $<HTMLInputElement>('allers-retours');
-const tourParc = $<HTMLInputElement>('tour-parc');
 const hint = $<HTMLElement>('hint');
 
 const map = L.map('map', { zoomControl: true });
@@ -82,8 +81,6 @@ function majFormulaire() {
   $('rayon-label').hidden = zoneType.value !== 'cercle';
   dessinBox.hidden = zoneType.value !== 'polygone';
   $('allers-retours-label').hidden = !zoneActive();
-  // La boucle en zone a sa propre construction, sans tour de parc.
-  $('tour-parc-label').hidden = zoneActive();
   if (zoneType.value !== 'polygone') arreterDessin();
   majZone();
 }
@@ -259,7 +256,7 @@ form.addEventListener('submit', (e) => {
   worker.postMessage({
     type: 'generate',
     id: ++idReq,
-    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, tourParc: tourParc.checked },
+    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain },
   });
 });
 
