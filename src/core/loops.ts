@@ -13,7 +13,7 @@
 //    ou le plus bas alentour, puis un cercle de 1,5 km) ; sinon la boucle la
 //    plus proche, avec un message explicite.
 
-import { CLASSES, distanceToNode, nearestNode, TYPE_SENTIER, type Graph, type Terrain } from './graph';
+import { CLASSES, distanceToNode, nearestNode, toXY, TYPE_SENTIER, type Graph, type Terrain } from './graph';
 import { Router } from './router';
 
 export const TOL_DISTANCE = 0.05;
@@ -80,6 +80,8 @@ export interface Loop {
   eauM: number;
   /** Distance à vol d'oiseau entre l'arrivée et le départ, en mètres. */
   ecartArriveeM: number;
+  /** Virages serrés par km. */
+  virages: number;
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -142,6 +144,8 @@ interface Candidate {
   partEau: number;
   /** Part de la distance sur des voies interdites aux voitures. */
   partSansVoiture: number;
+  /** Virages serrés par km (cap qui tourne de plus de 60° sur 30 m). */
+  virages: number;
   score: number;
 }
 
@@ -282,8 +286,38 @@ const TRI_PARENTS_AGREMENT = true;
 const AGREMENT_MIN_POINT = 0.5;
 const POIDS_SANS_VOITURE_CHOIX = 0.5;
 /** Clé du choix final : entre deux boucles du même groupe, la plus agréable passe devant. */
-export const cleChoix = (c: { score: number; partParc: number; partEau: number; partSansVoiture: number }) =>
-  c.score - POIDS_PARC_CHOIX * c.partParc - POIDS_EAU_CHOIX * c.partEau - POIDS_SANS_VOITURE_CHOIX * c.partSansVoiture;
+/**
+ * Sortie plate : chaque virage serré par km coûte 0,6 point au choix. Les
+ * circuits modèles en ont 1,5 et 1,8 par km, les boucles en escalier de rues
+ * 3 à 4. Sur 15 départs, la n°1 passe de 2,8 à 2,2 virages par km, 59
+ * demandes sur 60 tenues ; la n°1 du circuit de l'Orangerie le recouvre à
+ * 36 % au lieu de 20 %.
+ */
+const POIDS_VIRAGES = 0.6;
+/**
+ * Sortie plate : un quart des candidates sont des « lignes droites » (un seul
+ * point de passage loin devant, le long d'un canal ou d'un parc, retour par
+ * l'autre rive), deux au plus parmi les cinq proposées. Au bord des canaux, la
+ * part au bord de l'eau de la n°1 double (canal Saint-Martin : 28 → 61 %).
+ */
+const PART_LIGNES = 0.25;
+const LIGNES_MAX = 2;
+/**
+ * Sortie à dénivelé : le D+ prime, l'agrément ne compte qu'à moitié et les
+ * zigzags ne sont pas pénalisés (lacets d'une montée). Effet faible mesuré
+ * sur Annecy (82 % tenu, agrément quasi inchangé) : réglage de principe.
+ */
+const FACTEUR_AGREMENT_DPLUS = 0.5;
+/** Sortie plate : D+ libre ou moins de PENTE_PLATE m par km. */
+const PENTE_PLATE = 15;
+export const estPlate = (t: Cible) => t.h == null || t.h / (t.d / 1000) < PENTE_PLATE;
+export const cleChoix = (
+  c: { score: number; partParc: number; partEau: number; partSansVoiture: number; virages: number },
+  plate: boolean,
+) => {
+  const agrement = POIDS_PARC_CHOIX * c.partParc + POIDS_EAU_CHOIX * c.partEau + POIDS_SANS_VOITURE_CHOIX * c.partSansVoiture;
+  return plate ? c.score - agrement + POIDS_VIRAGES * c.virages : c.score - FACTEUR_AGREMENT_DPLUS * agrement;
+};
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
   CODES_SANS_VOITURE.has(k) ? 1 : (FACTEUR_CLASSE[CLASSES[k]] ?? 1) * FACTEUR_VOITURES);
 /** Classes comptées comme « grande route » dans les boucles affichées. */
@@ -533,7 +567,9 @@ export class LoopGenerator {
     for (let i = 0; i < nCandidats; i++) {
       const p: Params = {
         theta: theta0 + i * ANGLE_OR,
-        k: K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)),
+        // Sortie plate : une part de « lignes droites », un seul point de
+        // passage loin devant (le long d'un canal, d'un parc), retour par l'autre rive.
+        k: estPlate(target) && rand() < PART_LIGNES ? 1 : K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)),
         beta: BETAS[i % BETAS.length],
         radius: r0 * (0.85 + 0.3 * rand()),
         mode: MODES[Math.floor(rand() * MODES.length)],
@@ -558,7 +594,7 @@ export class LoopGenerator {
     // Les tours supplémentaires ne servent que si rien n'est encore dans la tolérance.
     for (let tour = 0; tour < tours && cands.length > 0; tour++) {
       if (TRI_PARENTS_AGREMENT) {
-        cands.sort((x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x) - cleChoix(y));
+        cands.sort((x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x, estPlate(target)) - cleChoix(y, estPlate(target)));
       } else cands.sort((x, y) => x.score - y.score);
       if (tour > 0 && cands.some((c) => dansTolerance(c, target))) break;
       const parents = cands.slice(0, N_PARENTS);
@@ -571,7 +607,7 @@ export class LoopGenerator {
           const pas = Math.max(-1.6, Math.min(1.6, errH * 1.8));
           const p: Params = {
             theta: par.p.theta + (v === 0 ? 0 : (rand() - 0.5) * 0.7),
-            k: v === 2 ? K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)) : par.p.k,
+            k: v === 2 && par.p.k > 1 ? K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)) : par.p.k,
             beta: Math.max(-3, Math.min(5, par.p.beta + pas * (v === 0 ? 1 : 0.5 + rand()))),
             radius: par.p.radius * (target.d / par.distanceM),
             mode: v === 3 ? (errH > 0.1 ? 1 : errH < -0.1 ? -1 : 0) : par.p.mode,
@@ -667,11 +703,13 @@ export class LoopGenerator {
     // dans la tolérance d'abord : le score peut classer devant elles une
     // boucle hors tolérance (+2 % / +18 % bat 4 % / 13 %), qui l'évinçait.
     const ordre = [...cands].sort(
-      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x) - cleChoix(y),
+      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x, estPlate(target)) - cleChoix(y, estPlate(target)),
     );
     const choisies: { c: Candidate; set: Set<number> }[] = [];
     for (const c of ordre) {
       const set = new Set(c.edges);
+      // Deux « lignes droites » au plus : les boucles rondes gardent leur place.
+      if (c.p.k === 1 && choisies.filter((s) => s.c.p.k === 1).length >= LIGNES_MAX) continue;
       if (choisies.every((s) => jaccard(set, s.set) < 0.5)) choisies.push({ c, set });
       if (choisies.length === 5) break;
     }
@@ -806,6 +844,60 @@ export function jaccard(a: Set<number>, b: Set<number>) {
   return inter / (a.size + b.size - inter);
 }
 
+/**
+ * Virages serrés par km : le cap, pris sur des pas de 30 m le long de la
+ * géométrie, qui tourne de plus de 60°. Un escalier de rues en compte 3 à 4
+ * par km, une boucle fluide le long de l'eau 1,5 à 2, quelle que soit sa
+ * forme (ronde ou allongée dans une vallée).
+ */
+export function viragesParKm(g: Graph, edges: number[], dirs: number[]) {
+  const PAS = 30;
+  const COS_SEUIL = Math.cos((60 * Math.PI) / 180);
+  let n = 0;
+  let total = 0;
+  let reste = PAS;
+  let px = NaN, py = NaN; // dernier point échantillonné
+  let dx0 = 0, dy0 = 0; // direction du pas précédent
+  let ax = NaN, ay = NaN;
+  const visiter = (x: number, y: number) => {
+    if (Number.isNaN(ax)) {
+      ax = px = x;
+      ay = py = y;
+      return;
+    }
+    let d = Math.hypot(x - ax, y - ay);
+    total += d;
+    while (d >= reste) {
+      const t = reste / d;
+      const nx = ax + (x - ax) * t;
+      const ny = ay + (y - ay) * t;
+      const dx = nx - px, dy = ny - py;
+      if (dx0 !== 0 || dy0 !== 0) {
+        if ((dx * dx0 + dy * dy0) / (Math.hypot(dx, dy) * Math.hypot(dx0, dy0)) < COS_SEUIL) n++;
+      }
+      dx0 = dx; dy0 = dy; px = nx; py = ny;
+      ax = nx; ay = ny;
+      d -= reste;
+      reste = PAS;
+    }
+    reste -= d;
+    ax = x; ay = y;
+  };
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
+    const [u, v] = dirs[i] ? [g.a[e], g.b[e]] : [g.b[e], g.a[e]];
+    if (i === 0) visiter(g.x[u], g.y[u]);
+    const o0 = g.geomOff[e], o1 = g.geomOff[e + 1];
+    for (let k = 0; k < o1 - o0; k++) {
+      const o = dirs[i] ? o0 + k : o1 - 1 - k;
+      const [x, y] = toXY(g, g.geomLat[o], g.geomLon[o]);
+      visiter(x, y);
+    }
+    visiter(g.x[v], g.y[v]);
+  }
+  return total > 0 ? n / (total / 1000) : 0;
+}
+
 export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   let distanceM = 0;
   let dplusM = 0;
@@ -824,7 +916,8 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   }
   let rep = 0;
   for (const [e, n] of count) if (n > 1) rep += g.len[e] * n;
-  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0, partEau: distanceM > 0 ? eauM / distanceM : 0, partSansVoiture: distanceM > 0 ? svM / distanceM : 0 };
+  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0, partEau: distanceM > 0 ? eauM / distanceM : 0, partSansVoiture: distanceM > 0 ? svM / distanceM : 0,
+    virages: viragesParKm(g, edges, dirs) };
 }
 
 function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {
@@ -865,6 +958,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
     parcM: c.edges.reduce((s, e) => s + g.parc[e] * g.len[e], 0),
     eauM: c.edges.reduce((s, e) => s + g.eau[e] * g.len[e], 0),
+    virages: c.virages,
     ecartArriveeM: haversine(coords[0][0], coords[0][1], coords[coords.length - 1][0], coords[coords.length - 1][1]),
     sansVoitureM: c.edges.reduce((s, e) => s + (CODES_SANS_VOITURE.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: dansTolerance(c, t),

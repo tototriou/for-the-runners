@@ -34,6 +34,14 @@ rondes, et les boucles proposées sont choisies sur leur part dans les parcs,
 au bord de l'eau et sans voitures. Ces poids sont calés sur un circuit
 modèle : le tour de la Grande Île de Strasbourg par les quais.
 
+**Plat ou dénivelé.** Pour une sortie plate (D+ libre ou moins de 15 m par
+km), l'app évite les zigzags : chaque virage serré (le cap qui tourne de plus
+de 60° sur 30 m) pèse dans le choix, et un quart des boucles essayées sont
+des « lignes droites » le long d'un canal ou d'un parc, avec retour par
+l'autre rive (deux au plus parmi les cinq proposées). Pour une sortie à
+dénivelé, les lacets sont normaux : les virages ne comptent pas et
+l'agrément ne pèse qu'à moitié, le D+ prime.
+
 **Tour de parc.** Une boucle peut faire un tour de parc, au plus un, sans
 option à cocher : la moitié des boucles essayées vont vers l'un des grands
 parcs à portée (au moins 800 m d'allées, à moins de 40 % de la distance, les
