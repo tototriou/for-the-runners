@@ -29,15 +29,17 @@ le D+. Dans cette fourchette, l'écart de distance ne compte presque plus :
 le plus important est que le parcours soit agréable. Un tour de parc qui
 dépasse de 400 m passe devant un tour de pâté de maisons qui tombe à 200 m.
 Dès la construction, la moitié des boucles essayées passent par un parc ou
-le bord de l'eau proche, et les boucles proposées sont choisies sur leur
-part au bord de l'eau, dans les parcs et sans voitures. Les boucles
+le bord de l'eau proche, avec 2 à 6 points de passage pour des boucles
+rondes, et les boucles proposées sont choisies sur leur part dans les parcs,
+au bord de l'eau et sans voitures. Ces poids sont calés sur un circuit
+modèle : le tour de la Grande Île de Strasbourg par les quais. Les boucles
 privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
-piétonnes, chemins et sentiers) : toute voie ouverte aux voitures compte
+piétonnes, zones de rencontre, chemins et sentiers) : toute autre voie compte
 double dans le calcul, les grandes routes (principales et départementales)
 8 fois. Elles passent aussi par les parcs et jardins publics et longent
 l'eau (rivières, canaux, lacs, à moins de 30 m) : une voie qui y est compte
 moitié moins, et parmi les boucles possibles, celles qui y passent le plus
-sont proposées d'abord (le bord de l'eau pèse deux fois plus que les parcs). Elles n'ont aucun demi-tour de moins de 1 km : pas
+sont proposées d'abord. Elles n'ont aucun demi-tour de moins de 1 km : pas
 d'aller au bout d'une rue pour en revenir. Chaque boucle indique sa part sans
 voitures, sa part dans les parcs et au bord de l'eau (à partir de 5 %) et sa
 distance sur grande route.

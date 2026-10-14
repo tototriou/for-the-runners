@@ -127,6 +127,13 @@ interface Candidate {
   score: number;
 }
 
+/**
+ * Nombre de points de passage d'une candidate : 2 à 6. Avec 2 ou 3, les
+ * boucles étaient des triangles qui coupaient à travers les quartiers ; plus
+ * de points donnent des boucles rondes qui suivent un quai ou un parc.
+ */
+const K_MIN = 2;
+const K_MAX = 6;
 const N_CANDIDATS = 50;
 const N_PARENTS = 9;
 const N_VARIANTES = 35;
@@ -186,6 +193,9 @@ const FACTEUR_CLASSE: Partial<Record<(typeof CLASSES)[number], number>> = {
 /** Voies interdites aux voitures (voies vertes, pistes cyclables, piétonnes, sentiers). */
 export const VOIES_SANS_VOITURE: readonly (typeof CLASSES)[number][] = [
   'pedestrian', 'cycleway', 'path', 'track', 'footway', 'steps', 'bridleway',
+  // Zone de rencontre : le piéton y est prioritaire, les voitures à 20 km/h
+  // (les quais de la Grande Île à Strasbourg) ; elle compte comme sans voitures.
+  'living_street',
 ];
 export const CODES_SANS_VOITURE = new Set(VOIES_SANS_VOITURE.map((c) => CLASSES.indexOf(c)));
 /**
@@ -197,8 +207,8 @@ export const CODES_SANS_VOITURE = new Set(VOIES_SANS_VOITURE.map((c) => CLASSES.
 const FACTEUR_VOITURES = 2;
 /**
  * Parcs et jardins publics, à deux étages. Dans le coût, une voie qui y est
- * entièrement compte moitié moins. Au choix final, chaque point de part dans
- * les parcs vaut 2 points de score, entre boucles du même groupe (dans la
+ * entièrement compte moitié moins. Au choix final, la part dans les parcs
+ * rapporte des points de score (voir plus bas), entre boucles du même groupe (dans la
  * tolérance ou non) : le taux de réussite n'en dépend pas. Le coût seul ne
  * suffit pas, la forme de la boucle venant des points de passage. Mesuré sur
  * 10 départs près de parcs (Paris, Strasbourg, Colmar, Mulhouse, Annecy) :
@@ -208,7 +218,7 @@ const FACTEUR_VOITURES = 2;
 const BONUS_PARC = 0.5;
 /**
  * Bord de l'eau (à moins de 30 m), mêmes deux étages que les parcs : coût
- * moitié moins, et 4 points de score par point de part au choix final. Une
+ * moitié moins, et des points de score au choix final (voir plus bas). Une
  * voie à la fois dans un parc et au bord de l'eau prend le meilleur des deux
  * rabais. Mesuré sur 10 départs près de l'eau (Strasbourg, Colmar, Mulhouse,
  * Paris, Nogent, Annecy), 6 et 10 km, D+ libre ou 80 m : 22 % de la distance
@@ -217,8 +227,17 @@ const BONUS_PARC = 0.5;
  * perd une demande et double les allers-retours.
  */
 const BONUS_EAU = 0.5;
-const POIDS_EAU_CHOIX = 4;
-const POIDS_PARC_CHOIX = 2;
+/**
+ * Poids du choix final, calés sur un circuit modèle : le tour de la Grande
+ * Île de Strasbourg par les quais (zones de rencontre, chemins de berge,
+ * parcs). Avec l'eau à 4, les parcs à 2 et le sans-voitures à 1, l'app lui
+ * préférait des berges de canal plus longues mais sans charme (3,5 boucles
+ * proposées sur 5 notées au-dessus de lui) ; avec 2 / 3 / 0,5, les zones de
+ * rencontre comptées sans voitures et 2 à 6 points de passage, il passe en
+ * tête (0,3 sur 5 au-dessus) et la boucle n°1 en recouvre 58 % au lieu de 43 %.
+ */
+const POIDS_EAU_CHOIX = 2;
+const POIDS_PARC_CHOIX = 3;
 /**
  * Coût d'un mètre d'écart entre l'arrivée et le départ, quand il est toléré :
  * celui d'un mètre de rue. L'arrivée s'arrête avant le départ quand le retour
@@ -229,7 +248,6 @@ const POIDS_PARC_CHOIX = 2;
 export const PRIX_ECART_ARRIVEE = 2;
 /** L'arrivée peut toujours se trouver jusqu'à 400 m du départ. */
 export const ARRIVEE_M = 400;
-/** Clé du choix final : entre deux boucles du même groupe, la plus verte passe devant. */
 /**
  * Agrément dès la construction : le choix final ne peut garder qu'une boucle
  * déjà tracée. La moitié des candidates attirent leurs points de passage vers
@@ -244,7 +262,8 @@ const PART_VERTS = 0.5;
 const TRI_PARENTS_AGREMENT = true;
 /** Agrément minimal d'un point de passage attiré (sinon le plus proche). */
 const AGREMENT_MIN_POINT = 0.5;
-const POIDS_SANS_VOITURE_CHOIX = 1;
+const POIDS_SANS_VOITURE_CHOIX = 0.5;
+/** Clé du choix final : entre deux boucles du même groupe, la plus agréable passe devant. */
 export const cleChoix = (c: { score: number; partParc: number; partEau: number; partSansVoiture: number }) =>
   c.score - POIDS_PARC_CHOIX * c.partParc - POIDS_EAU_CHOIX * c.partEau - POIDS_SANS_VOITURE_CHOIX * c.partSansVoiture;
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
@@ -411,7 +430,7 @@ export class LoopGenerator {
     for (let i = 0; i < nCandidats; i++) {
       const p: Params = {
         theta: theta0 + i * ANGLE_OR,
-        k: rand() < 0.5 ? 2 : 3,
+        k: K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)),
         beta: BETAS[i % BETAS.length],
         radius: r0 * (0.85 + 0.3 * rand()),
         mode: MODES[Math.floor(rand() * MODES.length)],
@@ -437,7 +456,7 @@ export class LoopGenerator {
           const pas = Math.max(-1.6, Math.min(1.6, errH * 1.8));
           const p: Params = {
             theta: par.p.theta + (v === 0 ? 0 : (rand() - 0.5) * 0.7),
-            k: v === 2 ? 5 - par.p.k : par.p.k,
+            k: v === 2 ? K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)) : par.p.k,
             beta: Math.max(-3, Math.min(5, par.p.beta + pas * (v === 0 ? 1 : 0.5 + rand()))),
             radius: par.p.radius * (target.d / par.distanceM),
             mode: v === 3 ? (errH > 0.1 ? 1 : errH < -0.1 ? -1 : 0) : par.p.mode,
