@@ -358,6 +358,18 @@ describe('données réelles (tuiles d\u2019Annecy)', () => {
     for (const l of r.loops) verifierBoucle(g, l);
   });
 
+  it('tour de parc : plus de distance dans les parcs, boucles valides', async () => {
+    const depart = { lat: 45.9010, lon: 6.1300, distanceKm: 6, terrain: 'mixte' as const, seed: 7 };
+    const g = (await store.graphFor(depart.lat, depart.lon, depart.distanceKm))!.graph;
+    const gen = new LoopGenerator(g);
+    const part = (r: ReturnType<LoopGenerator['generate']>) => r.loops.reduce((s, l) => s + l.parcM / l.distanceM, 0) / r.loops.length;
+    const sans = gen.generate(depart);
+    const avec = gen.generate({ ...depart, tourParc: true });
+    expect(avec.ok).toBe(true);
+    for (const l of avec.loops) verifierBoucle(g, l);
+    expect(part(avec)).toBeGreaterThan(part(sans));
+  });
+
   it('hors des régions : pas de graphe', async () => {
     expect(await store.graphFor(45.764, 4.8357, 10)).toBeNull();
   });

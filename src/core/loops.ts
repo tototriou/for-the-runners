@@ -51,6 +51,8 @@ export interface LoopRequest {
   elargir?: boolean;
   /** Distance tolérée entre l'arrivée et le départ, en m (défaut ARRIVEE_M ; 0 : boucle fermée). */
   arriveeM?: number;
+  /** Faire le tour d'un grand parc proche pendant la boucle. */
+  tourParc?: boolean;
 }
 
 export interface Loop {
@@ -109,7 +111,23 @@ interface Params {
   mode: -1 | 0 | 1;
   /** Mode 0 : point attiré vers le parc ou le bord de l'eau le plus proche. */
   vert: boolean;
+  /** Parc dont la boucle fait le tour (indice dans les parcs visés), -1 : aucun. */
+  parc: number;
 }
+
+/** Réseau d'allées d'un parc : nœuds, centre et longueur totale. */
+interface Parc {
+  cx: number;
+  cy: number;
+  longueurM: number;
+  noeuds: number[];
+}
+
+/** Un parc compte à partir de 800 m d'allées : en dessous, son tour n'en vaut pas le détour. */
+const PARC_MIN_M = 800;
+/** Parcs visés : les mieux placés (grands et proches) à moins de 40 % de la distance. */
+const N_PARCS_VISES = 3;
+const PORTEE_PARC = 0.4;
 
 interface Candidate {
   p: Params;
@@ -308,6 +326,10 @@ export class LoopGenerator {
 
   /** Distance tolérée entre l'arrivée et le départ de la demande en cours. */
   private arriveeM = 0;
+  /** Parcs du graphe (calculés à la première demande de tour de parc). */
+  private parcs: Parc[] | null = null;
+  /** Parcs dont les boucles de la demande en cours font le tour. */
+  private parcsVises: Parc[] = [];
 
   /** Budget de travail épuisé : on ne lance plus de nouvelle candidate. */
   private budget = BUDGET_TRAVAIL;
@@ -365,6 +387,7 @@ export class LoopGenerator {
       if (w < 0) w = g.grid.nearest(px, py);
       if (w >= 0 && w !== pts[pts.length - 1]) pts.push(w);
     }
+    if (p.parc >= 0) this.insererTourDeParc(pts, this.parcsVises[p.parc]);
     pts.push(start);
     if (pts.length < 3) return null;
 
@@ -402,6 +425,85 @@ export class LoopGenerator {
     return { p, edges, dirs, ...m, score: score(m, target) };
   }
 
+  /**
+   * Remplace le point de passage le plus proche du parc par quatre points
+   * sur son pourtour (les allées les plus excentrées vers l'entrée, puis en
+   * tournant dans le sens de la boucle) : le routage, qui préfère les parcs,
+   * relie ces points par les allées et fait le tour.
+   */
+  private insererTourDeParc(pts: number[], P: Parc) {
+    const g = this.g;
+    let j = -1;
+    let dj = Infinity;
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.hypot(g.x[pts[i]] - P.cx, g.y[pts[i]] - P.cy);
+      if (d < dj) {
+        dj = d;
+        j = i;
+      }
+    }
+    if (j < 0) return;
+    const prec = pts[j - 1];
+    const a0 = Math.atan2(g.y[prec] - P.cy, g.x[prec] - P.cx);
+    const tour: number[] = [];
+    for (let q = 0; q < 4; q++) {
+      const ux = Math.cos(a0 + (q * Math.PI) / 2);
+      const uy = Math.sin(a0 + (q * Math.PI) / 2);
+      let best = -1;
+      let bv = -Infinity;
+      for (const n of P.noeuds) {
+        const v = (g.x[n] - P.cx) * ux + (g.y[n] - P.cy) * uy;
+        if (v > bv) {
+          bv = v;
+          best = n;
+        }
+      }
+      if (best >= 0 && best !== tour[tour.length - 1]) tour.push(best);
+    }
+    pts.splice(j, 1, ...tour);
+  }
+
+  /** Parcs d'au moins PARC_MIN_M d'allées : composantes des arêtes surtout dans un parc. */
+  private tousLesParcs(): Parc[] {
+    if (this.parcs) return this.parcs;
+    const g = this.g;
+    const pere = Int32Array.from({ length: g.n }, (_, i) => i);
+    const racine = (u: number): number => {
+      while (pere[u] !== u) u = pere[u] = pere[pere[u]];
+      return u;
+    };
+    for (let e = 0; e < g.m; e++) if (g.parc[e] >= 0.5) pere[racine(g.a[e])] = racine(g.b[e]);
+    const parRacine = new Map<number, Parc>();
+    for (let e = 0; e < g.m; e++) {
+      if (g.parc[e] < 0.5) continue;
+      const r = racine(g.a[e]);
+      let P = parRacine.get(r);
+      if (!P) parRacine.set(r, (P = { cx: 0, cy: 0, longueurM: 0, noeuds: [] }));
+      const L = g.len[e];
+      P.cx += L * (g.x[g.a[e]] + g.x[g.b[e]]) / 2;
+      P.cy += L * (g.y[g.a[e]] + g.y[g.b[e]]) / 2;
+      P.longueurM += L;
+      P.noeuds.push(g.a[e], g.b[e]);
+    }
+    this.parcs = [...parRacine.values()].filter((P) => P.longueurM >= PARC_MIN_M);
+    for (const P of this.parcs) {
+      P.cx /= P.longueurM;
+      P.cy /= P.longueurM;
+      P.noeuds = [...new Set(P.noeuds)];
+    }
+    return this.parcs;
+  }
+
+  /** Les parcs les mieux placés pour un tour : grands et proches du départ. */
+  private choisirParcs(start: number, d: number): Parc[] {
+    const g = this.g;
+    const dist = (P: Parc) => Math.hypot(P.cx - g.x[start], P.cy - g.y[start]);
+    return this.tousLesParcs()
+      .filter((P) => dist(P) <= PORTEE_PARC * d)
+      .sort((A, B) => B.longueurM / (1 + dist(B) / 1000) - A.longueurM / (1 + dist(A) / 1000))
+      .slice(0, N_PARCS_VISES);
+  }
+
   /** Construit puis ajuste le rayon jusqu'à approcher la distance visée. */
   private buildAdjusted(start: number, p: Params, terrain: Terrain, target: Cible, iters: number) {
     let best: Candidate | null = null;
@@ -435,7 +537,18 @@ export class LoopGenerator {
         radius: r0 * (0.85 + 0.3 * rand()),
         mode: MODES[Math.floor(rand() * MODES.length)],
         vert: rand() < PART_VERTS,
+        parc: -1,
       };
+      if (this.parcsVises.length > 0) {
+        // La boucle passe par le parc : cercle orienté vers lui, assez grand pour l'atteindre.
+        const iParc = i % this.parcsVises.length;
+        const P = this.parcsVises[iParc];
+        const dx = P.cx - this.g.x[start];
+        const dy = P.cy - this.g.y[start];
+        p.parc = iParc;
+        p.theta = Math.atan2(dy, dx) + (rand() - 0.5) * 1.2;
+        p.radius = Math.max(p.radius, 0.55 * Math.hypot(dx, dy));
+      }
       if (i >= MIN_CANDIDATS && this.epuise()) break;
       const c = this.buildAdjusted(start, p, terrain, target, ITER_RAYON);
       if (c) cands.push(c);
@@ -461,6 +574,7 @@ export class LoopGenerator {
             radius: par.p.radius * (target.d / par.distanceM),
             mode: v === 3 ? (errH > 0.1 ? 1 : errH < -0.1 ? -1 : 0) : par.p.mode,
             vert: par.p.vert,
+            parc: par.p.parc,
           };
           const c = this.buildAdjusted(start, p, terrain, target, 3);
           if (c) cands.push(c);
@@ -516,6 +630,7 @@ export class LoopGenerator {
       return vide('Point de départ trop loin d\u2019un chemin de la zone (plus de 300 m). Choisis un point sur un chemin ou une route.');
     }
     const target: Cible = { d: req.distanceKm * 1000, h: libre ? null : Math.max(req.dplusM!, 1) };
+    this.parcsVises = req.tourParc ? this.choisirParcs(demande, target.d) : [];
     const rand = rng(req.seed ?? 12345);
 
     let start = demande;
@@ -577,9 +692,10 @@ export class LoopGenerator {
       };
     }
     const dplusOk = loops.filter((l) => l.dansTolerance).map((l) => Math.round(l.dplusM));
-    const resume = libre
+    const resume = (libre
       ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (${libelleTolDistance(target.d)}), de ${Math.min(...dplusOk)} à ${Math.max(...dplusOk)} m D+ : à toi de choisir.`
-      : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`;
+      : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`)
+      + (req.tourParc && this.parcsVises.length === 0 ? ' Aucun grand parc à portée : boucles sans tour de parc.' : '');
     if (decale) {
       const dx = g.x[start] - g.x[demande];
       const dy = g.y[start] - g.y[demande];

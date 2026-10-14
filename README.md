@@ -32,7 +32,14 @@ Dès la construction, la moitié des boucles essayées passent par un parc ou
 le bord de l'eau proche, avec 2 à 6 points de passage pour des boucles
 rondes, et les boucles proposées sont choisies sur leur part dans les parcs,
 au bord de l'eau et sans voitures. Ces poids sont calés sur un circuit
-modèle : le tour de la Grande Île de Strasbourg par les quais. Les boucles
+modèle : le tour de la Grande Île de Strasbourg par les quais.
+
+**Tour de parc.** Case « Faire un tour de parc » (décochée par défaut) :
+l'app choisit l'un des grands parcs à portée (au moins 800 m d'allées, à
+moins de 40 % de la distance, les plus grands et les plus proches d'abord),
+oriente la boucle vers lui et y fait passer quatre points autour de ses
+allées : la boucle va au parc, en fait le tour, puis repart. Sans grand parc
+à portée, elle le dit et propose des boucles sans tour de parc. Les boucles
 privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
 piétonnes, zones de rencontre, chemins et sentiers) : toute autre voie compte
 double dans le calcul, les grandes routes (principales et départementales)
