@@ -13,7 +13,8 @@
   4. Par arête : longueur, D+ dans chaque sens (altitude échantillonnée tous
      les 30 m), type (route / sentier), part de la longueur dans un parc ou
      jardin public (couche Overture « land_use ») et au bord de l'eau (à
-     moins de 30 m, couche « water »), géométrie simplifiée avec altitudes.
+     moins de 30 m, couche « water ») et près d'une autoroute (150 m) ou
+     voie rapide (75 m), hors tunnels, géométrie simplifiée avec altitudes.
   5. Export : une tuile JSON gzip par case de la grille globale
      (TUILE_LAT × TUILE_LON degrés) + public/data/manifest.json.
 
@@ -98,6 +99,11 @@ CLASSES_EAU_EXCLUES = {"ditch", "drain"}
 # Un chemin de berge passe à moins de 30 m de l'eau (ou de l'axe d'une
 # rivière cartographiée en ligne) ; au-delà, c'est la rue parallèle.
 BORD_EAU_M = 30.0
+# Autoroutes et voies rapides : bruit et pollution ; personne ne veut courir à
+# côté. Une autoroute s'entend loin (le chemin de l'Ill à 100-200 m de l'A35,
+# à Strasbourg) : bande de 150 m ; voie rapide (route à chaussées séparées) :
+# 75 m. Les tunnels sont ignorés.
+BANDES_RAPIDES_M = {"motorway": 150.0, "trunk": 75.0}
 
 PAS_ECHANTILLON_M = 30.0
 # 1 m : au-delà, les lacets des sentiers étaient coupés à l'écran et dans
@@ -354,9 +360,10 @@ def parc_public(cls, tags, nom):
     return True
 
 
-def lire_base(region, release, type_, garder, etiquette, version):
-    """Géométries WKB d'une couche du thème « base » d'Overture retenues par
-    `garder(row)`, dans le rectangle de la région ; mises en cache."""
+def lire_base(region, release, type_, garder, etiquette, version, theme="base",
+              colonnes=("subtype", "class", "geometry", "bbox", "source_tags", "names")):
+    """Géométries WKB d'une couche d'Overture (thème « base » par défaut)
+    retenues par `garder(row)`, dans le rectangle de la région ; en cache."""
     import fsspec
     import pyarrow.parquet as pq
 
@@ -369,7 +376,7 @@ def lire_base(region, release, type_, garder, etiquette, version):
     xmin, ymin, xmax, ymax = bbox
     fs = fsspec.filesystem("https")
     wkbs, t0 = [], time.time()
-    for cle_f in lister_fichiers(release, "base", type_):
+    for cle_f in lister_fichiers(release, theme, type_):
         with fs.open(OVERTURE + cle_f, block_size=1 << 20) as f:
             pf = pq.ParquetFile(f)
             md = pf.metadata
@@ -384,7 +391,7 @@ def lire_base(region, release, type_, garder, etiquette, version):
                     groupes.append(g)
             if not groupes:
                 continue
-            table = pf.read_row_groups(groupes, columns=["subtype", "class", "geometry", "bbox", "source_tags", "names"])
+            table = pf.read_row_groups(groupes, columns=list(colonnes))
         for row in table.to_pylist():
             b = row["bbox"]
             if b["xmax"] < xmin or b["xmin"] > xmax or b["ymax"] < ymin or b["ymin"] > ymax:
@@ -423,6 +430,34 @@ def charger_parcs(region, release):
     union = shapely.union_all(shapely.make_valid(geoms)) if geoms else shapely.Polygon()
     shapely.prepare(union)
     return union
+
+
+def voie_rapide(row, classe):
+    if row["subtype"] != "road" or row["class"] != classe:
+        return False
+    # Une voie entièrement en tunnel ou couverte ne s'entend pas d'en haut.
+    for d in row["road_flags"] or []:
+        if d.get("between") is None and {"is_tunnel", "is_covered"} & set(d.get("values") or []):
+            return False
+    return True
+
+
+def charger_bande_rapide(region, release, proj):
+    """Bande autour des autoroutes et voies rapides (BANDES_RAPIDES_M), en plan local (m)."""
+    import shapely
+
+    bandes = []
+    for classe, largeur in BANDES_RAPIDES_M.items():
+        wkbs = lire_base(region, release, "segment", lambda r, c=classe: voie_rapide(r, c), f"rapides-{classe}", 1,
+                         theme="transportation", colonnes=("subtype", "class", "geometry", "bbox", "road_flags"))
+        geoms = [g for g in shapely.from_wkb(wkbs) if g.geom_type in ("LineString", "MultiLineString")]
+        if geoms:
+            geoms = shapely.transform(np.array(geoms, dtype=object),
+                                      lambda c: np.column_stack(proj.xy(c[:, 0], c[:, 1])))
+            bandes.append(shapely.union_all(shapely.buffer(geoms, largeur, quad_segs=4)))
+    bande = shapely.union_all(bandes) if bandes else shapely.Polygon()
+    shapely.prepare(bande)
+    return bande
 
 
 def eau_retenue(row):
@@ -788,7 +823,7 @@ def denivele(z):
     return float(d[d > 0].sum()), float(-d[d < 0].sum())
 
 
-def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj):
+def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, proj):
     t0 = time.time()
     # Identifiants de nœud uniques dans la région, positions.
     ids, pos = {}, {}
@@ -826,6 +861,9 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj
     au_bord = shapely.contains_xy(bord_eau, px, py)
     part_eau = np.bincount(mil_e, weights=au_bord, minlength=len(plan)) / n_mil
     print(f"[eau] {region['id']} : {(part_eau > 0.5).sum()} arêtes surtout au bord de l'eau", flush=True)
+    pres = shapely.contains_xy(bande_rapide, px, py)
+    part_rapide = np.bincount(mil_e, weights=pres, minlength=len(plan)) / n_mil
+    print(f"[rapides] {region['id']} : {(part_rapide > 0.5).sum()} arêtes surtout le long d'une voie rapide", flush=True)
     noeuds = sorted(ids, key=ids.get)
     for n in noeuds:
         lat_pts.append(round(pos[n][0], 5))
@@ -859,7 +897,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj
             cur = (q(pos[n][0]), q(pos[n][1]))
             flat_noeuds += [cur[0] - prev[0], cur[1] - prev[1]]
             prev = cur
-        A, B, L, UP_AB, UP_BA, T, CL, PA, EA, G = [], [], [], [], [], [], [], [], [], []
+        A, B, L, UP_AB, UP_BA, T, CL, PA, EA, RA, G = [], [], [], [], [], [], [], [], [], [], []
         for e in liste:
             a, b, coords, t, cls = aretes[e]
             d0, n0, simp, lg = plan[e]
@@ -867,6 +905,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj
             A.append(loc[a]); B.append(loc[b]); T.append(t); CL.append(cls)
             PA.append(int(round(part_parc[e] * 100)))
             EA.append(int(round(part_eau[e] * 100)))
+            RA.append(int(round(part_rapide[e] * 100)))
             L.append(int(round(lg * 10)))
             UP_AB.append(int(round(up * 10))); UP_BA.append(int(round(down * 10)))
             zs = z[d0 + n0:d0 + n0 + len(simp)]
@@ -882,7 +921,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj
             "ids": [ids[n] for n in ids_loc],
             "nodes": flat_noeuds,
             "nodeEle": [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc],
-            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA},
+            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA, "rapide": RA},
             "geom": G,
         }
         brut = json.dumps(doc, separators=(",", ":")).encode()
@@ -932,7 +971,8 @@ def main():
         parcs = charger_parcs(region, release)
         proj = Projection(region)
         bord_eau = charger_bord_eau(region, release, proj)
-        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj)
+        bande_rapide = charger_bande_rapide(region, release, proj)
+        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, proj)
 
     manifeste = {
         "v": 2, "tileDeg": [TUILE_LAT, TUILE_LON],
