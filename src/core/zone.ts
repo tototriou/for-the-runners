@@ -102,6 +102,7 @@ interface Cand {
   partEau: number;
   partSansVoiture: number;
   virages: number;
+  partRapide: number;
   score: number;
 }
 

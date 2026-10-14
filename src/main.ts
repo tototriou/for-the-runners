@@ -316,6 +316,8 @@ function afficher(res: Reponse) {
         }${
           loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
         }${
+          loop.rapideM >= 200 ? ` · <span class="ko">${(loop.rapideM / 1000).toFixed(1).replace('.', ',')} km le long d'une voie rapide</span>` : ''
+        }${
           loop.grandesRoutesM >= 100
             ? ` · <span class="${loop.grandesRoutesM >= 1000 ? 'ko' : ''}">${(loop.grandesRoutesM / 1000).toFixed(1).replace('.', ',')} km sur grande route</span>`
             : ''
