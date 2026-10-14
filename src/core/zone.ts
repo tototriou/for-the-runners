@@ -99,6 +99,7 @@ interface Cand {
   dplusM: number;
   allerRetour: number;
   partParc: number;
+  partEau: number;
   score: number;
 }
 

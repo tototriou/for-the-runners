@@ -309,6 +309,8 @@ function afficher(res: Reponse) {
         }${
           loop.parcM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.parcM / loop.distanceM) * 100)} % dans les parcs` : ''
         }${
+          loop.eauM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.eauM / loop.distanceM) * 100)} % au bord de l'eau` : ''
+        }${
           loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
         }${
           loop.grandesRoutesM >= 100

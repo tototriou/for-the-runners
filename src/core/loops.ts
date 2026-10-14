@@ -52,6 +52,8 @@ export interface Loop {
   sansVoitureM: number;
   /** Distance dans les parcs et jardins publics, en mètres. */
   parcM: number;
+  /** Distance au bord de l'eau (à moins de 30 m), en mètres. */
+  eauM: number;
   /** Distance à vol d'oiseau entre l'arrivée et le départ, en mètres. */
   ecartArriveeM: number;
   score: number;
@@ -94,6 +96,8 @@ interface Candidate {
   allerRetour: number;
   /** Part de la distance dans les parcs et jardins publics. */
   partParc: number;
+  /** Part de la distance au bord de l'eau. */
+  partEau: number;
   score: number;
 }
 
@@ -176,6 +180,18 @@ const FACTEUR_VOITURES = 2;
  * avec le choix (40 % avec un poids de 4, qui laisse passer plus d'allers-retours).
  */
 const BONUS_PARC = 0.5;
+/**
+ * Bord de l'eau (à moins de 30 m), mêmes deux étages que les parcs : coût
+ * moitié moins, et 4 points de score par point de part au choix final. Une
+ * voie à la fois dans un parc et au bord de l'eau prend le meilleur des deux
+ * rabais. Mesuré sur 10 départs près de l'eau (Strasbourg, Colmar, Mulhouse,
+ * Paris, Nogent, Annecy), 6 et 10 km, D+ libre ou 80 m : 22 % de la distance
+ * au bord de l'eau sans rien, 30 % par le coût seul, 37 % avec un poids de
+ * 2, 40 % avec 4, toutes demandes tenues. Un rabais de 0,7 monte à 43 % mais
+ * perd une demande et double les allers-retours.
+ */
+const BONUS_EAU = 0.5;
+const POIDS_EAU_CHOIX = 4;
 const POIDS_PARC_CHOIX = 2;
 /**
  * Coût d'un mètre d'écart entre l'arrivée et le départ, quand il est toléré :
@@ -188,7 +204,8 @@ export const PRIX_ECART_ARRIVEE = 2;
 /** L'arrivée peut toujours se trouver jusqu'à 400 m du départ. */
 export const ARRIVEE_M = 400;
 /** Clé du choix final : entre deux boucles du même groupe, la plus verte passe devant. */
-export const cleChoix = (c: { score: number; partParc: number }) => c.score - POIDS_PARC_CHOIX * c.partParc;
+export const cleChoix = (c: { score: number; partParc: number; partEau: number }) =>
+  c.score - POIDS_PARC_CHOIX * c.partParc - POIDS_EAU_CHOIX * c.partEau;
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
   CODES_SANS_VOITURE.has(k) ? 1 : (FACTEUR_CLASSE[CLASSES[k]] ?? 1) * FACTEUR_VOITURES);
 /** Classes comptées comme « grande route » dans les boucles affichées. */
@@ -214,7 +231,7 @@ export function coutsAretes(g: Graph, beta: number, terrain: Terrain) {
     const L = g.len[e];
     const relief = L > 0 ? (g.upAB[e] + g.upBA[e]) / L : 0;
     const fPente = Math.min(5, Math.max(0.2, Math.exp(-beta * relief * 10)));
-    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]] * (1 - BONUS_PARC * g.parc[e]);
+    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]] * Math.min(1 - BONUS_PARC * g.parc[e], 1 - BONUS_EAU * g.eau[e]);
     cost[e] = Math.max(L, 0.1) * f;
     if (f < minFactor) minFactor = f;
   }
@@ -595,17 +612,19 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   let distanceM = 0;
   let dplusM = 0;
   let parcM = 0;
+  let eauM = 0;
   const count = new Map<number, number>();
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     distanceM += g.len[e];
     parcM += g.len[e] * g.parc[e];
+    eauM += g.len[e] * g.eau[e];
     dplusM += dirs[i] ? g.upAB[e] : g.upBA[e];
     count.set(e, (count.get(e) ?? 0) + 1);
   }
   let rep = 0;
   for (const [e, n] of count) if (n > 1) rep += g.len[e] * n;
-  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0 };
+  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0, partEau: distanceM > 0 ? eauM / distanceM : 0 };
 }
 
 function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {
@@ -646,6 +665,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
     ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
     parcM: c.edges.reduce((s, e) => s + g.parc[e] * g.len[e], 0),
+    eauM: c.edges.reduce((s, e) => s + g.eau[e] * g.len[e], 0),
     ecartArriveeM: haversine(coords[0][0], coords[0][1], coords[coords.length - 1][0], coords[coords.length - 1][1]),
     sansVoitureM: c.edges.reduce((s, e) => s + (CODES_SANS_VOITURE.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: dansTolerance(c, t),

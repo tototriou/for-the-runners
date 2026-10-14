@@ -28,12 +28,13 @@ Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Les boucles
 privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
 piétonnes, chemins et sentiers) : toute voie ouverte aux voitures compte
 double dans le calcul, les grandes routes (principales et départementales)
-8 fois. Elles passent aussi par les parcs et jardins publics : une voie qui
-y est compte moitié moins, et parmi les boucles possibles, les plus vertes
-sont proposées d'abord. Elles n'ont aucun demi-tour de moins de 1 km : pas
+8 fois. Elles passent aussi par les parcs et jardins publics et longent
+l'eau (rivières, canaux, lacs, à moins de 30 m) : une voie qui y est compte
+moitié moins, et parmi les boucles possibles, celles qui y passent le plus
+sont proposées d'abord (le bord de l'eau pèse deux fois plus que les parcs). Elles n'ont aucun demi-tour de moins de 1 km : pas
 d'aller au bout d'une rue pour en revenir. Chaque boucle indique sa part sans
-voitures, sa part dans les parcs (à partir de 5 %) et sa distance sur grande
-route.
+voitures, sa part dans les parcs et au bord de l'eau (à partir de 5 %) et sa
+distance sur grande route.
 
 **Arrivée.** L'arrivée peut toujours se trouver jusqu'à 400 m du départ,
 zone comprise : la boucle s'arrête avant quand le retour passerait par des
@@ -101,8 +102,10 @@ Le script :
    tous les 30 m), le type (route ou sentier), la part de sa longueur dans un
    parc ou jardin public (couche `land_use` d'Overture : parcs, jardins,
    espaces verts, sauf accès privé ; un jardin doit avoir un nom ou un accès
-   déclaré ouvert, sinon c'est le plus souvent une cour d'immeuble) et une
-   géométrie simplifiée ;
+   déclaré ouvert, sinon c'est le plus souvent une cour d'immeuble), la part
+   au bord de l'eau (à moins de 30 m d'une rivière, d'un canal, d'un
+   ruisseau, d'un lac ou d'un étang de la couche `water` ; ni piscine, ni
+   bassin de rétention, ni fossé) et une géométrie simplifiée ;
 5. range chaque arête dans la tuile de son premier nœud et écrit les tuiles
    en JSON compressé. Les nœuds portent un identifiant unique dans la
    région : le navigateur recolle les tuiles sans créer de fausse jonction
