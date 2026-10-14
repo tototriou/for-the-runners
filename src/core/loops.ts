@@ -25,8 +25,12 @@ export const TOL_DISTANCE = 0.05;
 export const TOL_DISTANCE_M = 500;
 export const tolDistanceM = (d: number) => Math.max(TOL_DISTANCE_M, TOL_DISTANCE * d);
 export const libelleTolDistance = (d: number) => (TOL_DISTANCE * d > TOL_DISTANCE_M ? '±5 %' : '±500 m');
-/** Poids de l'écart de distance dans la fourchette (1 à son bord, contre 1 avant). */
-const POIDS_DANS_FOURCHETTE = 0.2;
+/**
+ * Poids de l'écart de distance dans la fourchette (contre 1 au-delà) : quasi
+ * nul, un tour de parc qui dépasse de 400 m vaut mieux qu'un tour de pâté de
+ * maisons qui tombe à 200 m. Il ne sert qu'à départager deux boucles égales.
+ */
+const POIDS_DANS_FOURCHETTE = 0.05;
 /** Part du score due à la distance : faible dans la fourchette, forte au-delà. */
 export function scoreDistance(distanceM: number, d: number) {
   const x = Math.abs(distanceM - d) / tolDistanceM(d);
@@ -103,6 +107,8 @@ interface Params {
   radius: number;
   /** Point intermédiaire : le plus proche (0), le plus haut (1) ou le plus bas (-1) alentour. */
   mode: -1 | 0 | 1;
+  /** Mode 0 : point attiré vers le parc ou le bord de l'eau le plus proche. */
+  vert: boolean;
 }
 
 interface Candidate {
@@ -116,6 +122,8 @@ interface Candidate {
   partParc: number;
   /** Part de la distance au bord de l'eau. */
   partEau: number;
+  /** Part de la distance sur des voies interdites aux voitures. */
+  partSansVoiture: number;
   score: number;
 }
 
@@ -222,8 +230,23 @@ export const PRIX_ECART_ARRIVEE = 2;
 /** L'arrivée peut toujours se trouver jusqu'à 400 m du départ. */
 export const ARRIVEE_M = 400;
 /** Clé du choix final : entre deux boucles du même groupe, la plus verte passe devant. */
-export const cleChoix = (c: { score: number; partParc: number; partEau: number }) =>
-  c.score - POIDS_PARC_CHOIX * c.partParc - POIDS_EAU_CHOIX * c.partEau;
+/**
+ * Agrément dès la construction : le choix final ne peut garder qu'une boucle
+ * déjà tracée. La moitié des candidates attirent leurs points de passage vers
+ * un parc ou le bord de l'eau, et les variantes partent des boucles les plus
+ * agréables, pas des plus proches de la cible. Mesuré sur 15 départs près de
+ * parcs ou d'eau, 6 et 10 km, D+ libre ou 80 m, avec la part sans voitures au
+ * choix et le poids 0,05 dans la fourchette : bord de l'eau 34 → 36,5 %,
+ * parcs 14,7 → 16,6 %, sans voitures 75 → 78 %, écart moyen à la distance
+ * 230 → 260 m, 59 demandes sur 60 tenues comme avant.
+ */
+const PART_VERTS = 0.5;
+const TRI_PARENTS_AGREMENT = true;
+/** Agrément minimal d'un point de passage attiré (sinon le plus proche). */
+const AGREMENT_MIN_POINT = 0.5;
+const POIDS_SANS_VOITURE_CHOIX = 1;
+export const cleChoix = (c: { score: number; partParc: number; partEau: number; partSansVoiture: number }) =>
+  c.score - POIDS_PARC_CHOIX * c.partParc - POIDS_EAU_CHOIX * c.partEau - POIDS_SANS_VOITURE_CHOIX * c.partSansVoiture;
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
   CODES_SANS_VOITURE.has(k) ? 1 : (FACTEUR_CLASSE[CLASSES[k]] ?? 1) * FACTEUR_VOITURES);
 /** Classes comptées comme « grande route » dans les boucles affichées. */
@@ -273,9 +296,18 @@ export class LoopGenerator {
     return this.travail > this.budget;
   }
 
+  /** Agrément de chaque nœud : la meilleure part parc ou eau de ses arêtes. */
+  private agrement: Float32Array;
+
   constructor(private g: Graph) {
     this.router = new Router(g);
     this.used = new Uint16Array(g.m);
+    this.agrement = new Float32Array(g.n);
+    for (let e = 0; e < g.m; e++) {
+      const v = Math.max(g.parc[e], g.eau[e]);
+      if (v > this.agrement[g.a[e]]) this.agrement[g.a[e]] = v;
+      if (v > this.agrement[g.b[e]]) this.agrement[g.b[e]] = v;
+    }
   }
 
   private costs(beta: number, terrain: Terrain) {
@@ -305,6 +337,11 @@ export class LoopGenerator {
       if (p.mode !== 0) {
         const rayonSnap = Math.min(1500, Math.max(150, 0.35 * p.radius));
         w = g.grid.extreme(px, py, rayonSnap, g.ele, p.mode);
+      }
+      if (w < 0 && p.vert) {
+        const rayonVert = Math.min(1000, Math.max(150, 0.3 * p.radius));
+        const v = g.grid.extreme(px, py, rayonVert, this.agrement, 1);
+        if (v >= 0 && this.agrement[v] >= AGREMENT_MIN_POINT) w = v;
       }
       if (w < 0) w = g.grid.nearest(px, py);
       if (w >= 0 && w !== pts[pts.length - 1]) pts.push(w);
@@ -378,6 +415,7 @@ export class LoopGenerator {
         beta: BETAS[i % BETAS.length],
         radius: r0 * (0.85 + 0.3 * rand()),
         mode: MODES[Math.floor(rand() * MODES.length)],
+        vert: rand() < PART_VERTS,
       };
       if (i >= MIN_CANDIDATS && this.epuise()) break;
       const c = this.buildAdjusted(start, p, terrain, target, ITER_RAYON);
@@ -385,7 +423,9 @@ export class LoopGenerator {
     }
     // Les tours supplémentaires ne servent que si rien n'est encore dans la tolérance.
     for (let tour = 0; tour < tours && cands.length > 0; tour++) {
-      cands.sort((x, y) => x.score - y.score);
+      if (TRI_PARENTS_AGREMENT) {
+        cands.sort((x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x) - cleChoix(y));
+      } else cands.sort((x, y) => x.score - y.score);
       if (tour > 0 && cands.some((c) => dansTolerance(c, target))) break;
       const parents = cands.slice(0, N_PARENTS);
       const parVariante = Math.ceil(nVariantes / parents.length);
@@ -401,6 +441,7 @@ export class LoopGenerator {
             beta: Math.max(-3, Math.min(5, par.p.beta + pas * (v === 0 ? 1 : 0.5 + rand()))),
             radius: par.p.radius * (target.d / par.distanceM),
             mode: v === 3 ? (errH > 0.1 ? 1 : errH < -0.1 ? -1 : 0) : par.p.mode,
+            vert: par.p.vert,
           };
           const c = this.buildAdjusted(start, p, terrain, target, 3);
           if (c) cands.push(c);
@@ -632,18 +673,20 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   let dplusM = 0;
   let parcM = 0;
   let eauM = 0;
+  let svM = 0;
   const count = new Map<number, number>();
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     distanceM += g.len[e];
     parcM += g.len[e] * g.parc[e];
     eauM += g.len[e] * g.eau[e];
+    if (CODES_SANS_VOITURE.has(g.cls[e])) svM += g.len[e];
     dplusM += dirs[i] ? g.upAB[e] : g.upBA[e];
     count.set(e, (count.get(e) ?? 0) + 1);
   }
   let rep = 0;
   for (const [e, n] of count) if (n > 1) rep += g.len[e] * n;
-  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0, partEau: distanceM > 0 ? eauM / distanceM : 0 };
+  return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0, partEau: distanceM > 0 ? eauM / distanceM : 0, partSansVoiture: distanceM > 0 ? svM / distanceM : 0 };
 }
 
 function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {

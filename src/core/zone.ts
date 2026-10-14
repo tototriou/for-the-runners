@@ -100,6 +100,7 @@ interface Cand {
   allerRetour: number;
   partParc: number;
   partEau: number;
+  partSansVoiture: number;
   score: number;
 }
 

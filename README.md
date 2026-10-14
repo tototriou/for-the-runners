@@ -26,7 +26,11 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 
 Tolérance visée : ±500 m sur la distance (±5 % au-delà de 10 km), ±15 % sur
 le D+. Dans cette fourchette, l'écart de distance ne compte presque plus :
-l'app préfère un beau parcours à quelques rues ajoutées pour tomber pile. Les boucles
+le plus important est que le parcours soit agréable. Un tour de parc qui
+dépasse de 400 m passe devant un tour de pâté de maisons qui tombe à 200 m.
+Dès la construction, la moitié des boucles essayées passent par un parc ou
+le bord de l'eau proche, et les boucles proposées sont choisies sur leur
+part au bord de l'eau, dans les parcs et sans voitures. Les boucles
 privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
 piétonnes, chemins et sentiers) : toute voie ouverte aux voitures compte
 double dans le calcul, les grandes routes (principales et départementales)
