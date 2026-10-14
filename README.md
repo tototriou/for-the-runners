@@ -24,7 +24,9 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
 3. « Générer les boucles » : 3 à 5 boucles, avec leurs écarts à la cible, le
    tracé et le profil. Le bouton GPX télécharge la boucle pour une montre.
 
-Tolérance visée : ±5 % sur la distance, ±15 % sur le D+. Les boucles
+Tolérance visée : ±500 m sur la distance (±5 % au-delà de 10 km), ±15 % sur
+le D+. Dans cette fourchette, l'écart de distance ne compte presque plus :
+l'app préfère un beau parcours à quelques rues ajoutées pour tomber pile. Les boucles
 privilégient les voies sans voitures (voies vertes, pistes cyclables, rues
 piétonnes, chemins et sentiers) : toute voie ouverte aux voitures compte
 double dans le calcul, les grandes routes (principales et départementales)

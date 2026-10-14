@@ -120,7 +120,7 @@ describe('LoopGenerator (grille synthétique)', () => {
     const dp = r.loops.map((l) => l.dplusM);
     expect(dp).toEqual([...dp].sort((x, y) => x - y));
     for (const l of r.loops.filter((x) => x.dansTolerance)) {
-      expect(Math.abs(l.ecartDistance)).toBeLessThanOrEqual(0.05);
+      expect(Math.abs(l.distanceM - 4000)).toBeLessThanOrEqual(500);
       expect(l.ecartDplus).toBe(0);
     }
     expect(r.message).toMatch(/à toi de choisir/);
@@ -248,7 +248,7 @@ describe('Boucles dans une zone (grille synthétique)', () => {
     const ok = r.loops.filter((l) => l.dansTolerance);
     expect(ok.length).toBeGreaterThan(0);
     for (const l of ok) {
-      expect(Math.abs(l.ecartDistance)).toBeLessThanOrEqual(0.05);
+      expect(Math.abs(l.distanceM - 5000)).toBeLessThanOrEqual(500);
       expect(Math.abs(l.ecartDplus)).toBeLessThanOrEqual(0.15);
       expect(l.partZone).toBe(1);
     }

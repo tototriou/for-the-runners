@@ -260,6 +260,9 @@ form.addEventListener('submit', (e) => {
   });
 });
 
+/** Écart signé en mètres, arrondi à 10 m : « +120 m », « −40 m ». */
+const metres = (m: number) => `${m >= 0 ? '+' : '−'}${Math.round(Math.abs(m) / 10) * 10} m`;
+
 function pct(x: number) {
   return `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(0)} %`;
 }
@@ -302,7 +305,7 @@ function afficher(res: Reponse) {
       <span class="swatch" style="background:${couleur}"></span>
       <span class="main">${(loop.distanceM / 1000).toFixed(1)} km · ${Math.round(loop.dplusM)} m D+</span>
       <span class="gaps">
-        <span class="${Math.abs(loop.ecartDistance) <= 0.05 ? 'ok' : 'ko'}">dist. ${pct(loop.ecartDistance)}</span> ·
+        <span class="${loop.distanceOk ? 'ok' : 'ko'}">dist. ${metres(loop.distanceM - loop.distanceM / (1 + loop.ecartDistance))}</span> ·
         ${dernierLibre ? '' : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·`}
         aller-retour ${(loop.allerRetour * 100).toFixed(0)} % · ${Math.round((loop.sansVoitureM / loop.distanceM) * 100)} % sans voitures${
           loop.ecartArriveeM >= 50 ? ` · arrivée à ${Math.round(loop.ecartArriveeM / 10) * 10} m du départ` : ''

@@ -7,12 +7,12 @@
 // pénalité de réutilisation fait monter par une rue et redescendre par la
 // voisine ; avec les allers-retours permis, elle est faible et la même côte
 // peut être répétée quand il n'y a pas d'autre choix. Le dernier point est
-// choisi pour retomber sur la distance visée (±5 %).
+// choisi pour retomber dans la fourchette de distance (±500 m, ou ±5 %).
 
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
 import {
   ARRIVEE_M, BUDGET_TRAVAIL, cleChoix, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
-  POIDS_HEURISTIQUE_MIN, PRIX_ECART_ARRIVEE, rng, SEUIL_ALLER_RETOUR, TOL_DISTANCE, TOL_DPLUS, type Loop, type LoopResponse,
+  POIDS_HEURISTIQUE_MIN, PRIX_ECART_ARRIVEE, rng, SEUIL_ALLER_RETOUR, libelleTolDistance, scoreDistance, tolDistanceM, TOL_DPLUS, type Loop, type LoopResponse,
 } from './loops';
 import { Router } from './router';
 
@@ -250,7 +250,7 @@ export class ZoneGenerator {
     }
 
     const dansTol = (c: { distanceM: number; dplusM: number }) =>
-      Math.abs(c.distanceM - D) / D <= TOL_DISTANCE && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
+      Math.abs(c.distanceM - D) <= tolDistanceM(D) && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
     cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || cleChoix(a) - cleChoix(b));
     const choisies: { c: Cand; set: Set<number> }[] = [];
     for (const c of cands) {
@@ -277,7 +277,7 @@ export class ZoneGenerator {
     if (nOk === 0) {
       return {
         ok: false, loops, startNode: start, stats,
-        message: `Aucune boucle de ${req.distanceKm} km (±5 %)${cible != null ? ` et ${cible} m D+ (±15 %)` : ''} n’a été trouvée ${zoneTxt}. ` +
+        message: `Aucune boucle de ${req.distanceKm} km (${libelleTolDistance(D)})${cible != null ? ` et ${cible} m D+ (±15 %)` : ''} n’a été trouvée ${zoneTxt}. ` +
           `La plus proche fait ${(loops[0].distanceM / 1000).toFixed(1)} km et ${Math.round(loops[0].dplusM)} m D+. ` +
           (departDedans
             ? 'Agrandis la zone, ou change la distance ou le D+.'
@@ -287,7 +287,7 @@ export class ZoneGenerator {
     return {
       ok: true, loops, startNode: start, stats,
       message: cible == null
-        ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (±5 %) ${zoneTxt}, de ${Math.round(Math.min(...loops.filter((l) => l.dansTolerance).map((l) => l.dplusM)))} à ${Math.round(Math.max(...loops.filter((l) => l.dansTolerance).map((l) => l.dplusM)))} m D+ : à toi de choisir (${zonePct} pour la première).`
+        ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (${libelleTolDistance(D)}) ${zoneTxt}, de ${Math.round(Math.min(...loops.filter((l) => l.dansTolerance).map((l) => l.dplusM)))} à ${Math.round(Math.max(...loops.filter((l) => l.dansTolerance).map((l) => l.dplusM)))} m D+ : à toi de choisir (${zonePct} pour la première).`
         : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
     };
   }
@@ -295,10 +295,9 @@ export class ZoneGenerator {
 
 /** Score du mode normal : écarts relatifs aux tolérances, allers-retours. */
 function scoreCible(m: { distanceM: number; dplusM: number; allerRetour: number }, t: { d: number; h: number | null }) {
-  const ed = Math.abs(m.distanceM - t.d) / t.d / TOL_DISTANCE;
   const eh = t.h == null ? 0 : Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
   const f = (x: number) => (x <= 1 ? x : 1 + 2 * (x - 1));
-  return f(ed) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
+  return scoreDistance(m.distanceM, t.d) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
 }
 
 /**

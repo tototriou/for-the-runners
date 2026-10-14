@@ -4,8 +4,9 @@
 //    départ, retour au départ.
 // 2. Chaque tronçon : A* avec un coût qui attire (beta > 0) ou évite
 //    (beta < 0) le relief, et pénalise les arêtes déjà empruntées.
-// 3. Rayon ajusté (2-3 itérations) pour atteindre la distance.
-// 4. Score = |écart distance|/5 % + |écart D+|/15 % + allers-retours/15 %.
+// 3. Rayon ajusté (2-3 itérations) pour entrer dans la fourchette de distance.
+// 4. Score = écart de distance (presque nul dans la fourchette) + |écart D+|/15 %
+//    + allers-retours/15 %.
 // 5. ~35 variantes autour des 9 meilleures, puis 5 boucles différentes
 //    (Jaccard des arêtes < 0,5).
 // 6. Rien dans la tolérance : autres départs à moins de 2 km (le plus haut
@@ -16,6 +17,21 @@ import { CLASSES, distanceToNode, nearestNode, TYPE_SENTIER, type Graph, type Te
 import { Router } from './router';
 
 export const TOL_DISTANCE = 0.05;
+/**
+ * Fourchette de distance : ±500 m, ou ±5 % au-delà de 10 km. Dans la
+ * fourchette, l'écart ne compte presque plus : viser la distance au mètre
+ * près faisait tourner en rond dans quelques rues.
+ */
+export const TOL_DISTANCE_M = 500;
+export const tolDistanceM = (d: number) => Math.max(TOL_DISTANCE_M, TOL_DISTANCE * d);
+export const libelleTolDistance = (d: number) => (TOL_DISTANCE * d > TOL_DISTANCE_M ? '±5 %' : '±500 m');
+/** Poids de l'écart de distance dans la fourchette (1 à son bord, contre 1 avant). */
+const POIDS_DANS_FOURCHETTE = 0.2;
+/** Part du score due à la distance : faible dans la fourchette, forte au-delà. */
+export function scoreDistance(distanceM: number, d: number) {
+  const x = Math.abs(distanceM - d) / tolDistanceM(d);
+  return x <= 1 ? POIDS_DANS_FOURCHETTE * x : POIDS_DANS_FOURCHETTE + 2 * (x - 1);
+}
 export const TOL_DPLUS = 0.15;
 export const SEUIL_ALLER_RETOUR = 0.15;
 
@@ -41,6 +57,8 @@ export interface Loop {
   dplusM: number;
   /** Écarts relatifs signés à la cible (0,03 = +3 %). */
   ecartDistance: number;
+  /** Distance dans la fourchette (±500 m, ou ±5 % au-delà de 10 km). */
+  distanceOk: boolean;
   ecartDplus: number;
   /** Part de la longueur parcourue sur des arêtes empruntées plus d'une fois. */
   allerRetour: number;
@@ -337,7 +355,8 @@ export class LoopGenerator {
       if (!c) break;
       if (!best || c.score < best.score) best = c;
       const ratio = target.d / c.distanceM;
-      if (Math.abs(ratio - 1) < 0.015) break;
+      // Assez près du milieu de la fourchette : pas la peine de serrer plus.
+      if (Math.abs(c.distanceM - target.d) < 0.4 * tolDistanceM(target.d)) break;
       cur = { ...cur, radius: cur.radius * Math.min(2.5, Math.max(0.4, ratio)) };
     }
     return best;
@@ -499,7 +518,7 @@ export class LoopGenerator {
     }
     const dplusOk = loops.filter((l) => l.dansTolerance).map((l) => Math.round(l.dplusM));
     const resume = libre
-      ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (±5 %), de ${Math.min(...dplusOk)} à ${Math.max(...dplusOk)} m D+ : à toi de choisir.`
+      ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (${libelleTolDistance(target.d)}), de ${Math.min(...dplusOk)} à ${Math.max(...dplusOk)} m D+ : à toi de choisir.`
       : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`;
     if (decale) {
       const dx = g.x[start] - g.x[demande];
@@ -525,7 +544,7 @@ export class LoopGenerator {
  */
 function suggererDplus(cands: Candidate[], h: number, d: number): LoopResponse['suggestion'] | null {
   const t = { d, h };
-  const dp = cands.filter((c) => Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE).map((c) => c.dplusM);
+  const dp = cands.filter((c) => Math.abs(c.distanceM - t.d) <= tolDistanceM(t.d)).map((c) => c.dplusM);
   if (dp.length === 0) return null;
   const min = Math.min(...dp);
   const max = Math.max(...dp);
@@ -599,7 +618,7 @@ export interface Cible {
 }
 
 function dansTolerance(c: { distanceM: number; dplusM: number }, t: Cible) {
-  return Math.abs(c.distanceM - t.d) / t.d <= TOL_DISTANCE && (t.h == null || Math.abs(c.dplusM - t.h) / t.h <= TOL_DPLUS);
+  return Math.abs(c.distanceM - t.d) <= tolDistanceM(t.d) && (t.h == null || Math.abs(c.dplusM - t.h) / t.h <= TOL_DPLUS);
 }
 
 export function jaccard(a: Set<number>, b: Set<number>) {
@@ -628,12 +647,11 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
 }
 
 function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {
-  const ed = Math.abs(m.distanceM - t.d) / t.d / TOL_DISTANCE;
   const eh = t.h == null ? 0 : Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
   // Au-delà de la tolérance, l'écart pèse davantage : on préfère deux
   // écarts modérés à un critère respecté et l'autre très loin.
   const f = (x: number) => (x <= 1 ? x : 1 + 2 * (x - 1));
-  return f(ed) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
+  return scoreDistance(m.distanceM, t.d) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
 }
 
 export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
@@ -662,7 +680,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
   const ecartDplus = t.h == null ? 0 : (c.dplusM - t.h) / t.h;
   return {
     edges: c.edges, dirs: c.dirs, distanceM: c.distanceM, dplusM: c.dplusM,
-    ecartDistance, ecartDplus, allerRetour: c.allerRetour, score: c.score,
+    ecartDistance, distanceOk: Math.abs(c.distanceM - t.d) <= tolDistanceM(t.d), ecartDplus, allerRetour: c.allerRetour, score: c.score,
     grandesRoutesM: c.edges.reduce((s, e) => s + (CODES_GRANDES_ROUTES.has(g.cls[e]) ? g.len[e] : 0), 0),
     parcM: c.edges.reduce((s, e) => s + g.parc[e] * g.len[e], 0),
     eauM: c.edges.reduce((s, e) => s + g.eau[e] * g.len[e], 0),
