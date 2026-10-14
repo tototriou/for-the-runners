@@ -39,8 +39,6 @@ const jeuDemande = process.argv.includes('--jeu') ? process.argv[process.argv.in
 // Graine du générateur : la même que l'app par défaut ; SEED=… pour vérifier
 // que le taux de réussite ne tient pas à un tirage chanceux.
 const SEED = Number(process.env.SEED ?? 12345);
-/** Arrivée jusqu'à 400 m du départ : le réglage par défaut de l'app. */
-const ARRIVEE_M = 400;
 
 const gen = new Generateur(chargerStore());
 
@@ -85,7 +83,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   let msChargementMax = 0;
   process.stdout.write(`${titre} : `);
   for (const c of cas) {
-    const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, seed: SEED, arriveeM: ARRIVEE_M });
+    const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, seed: SEED });
     msChargementMax = Math.max(msChargementMax, gen.msChargement);
     reponses.push({ c, r });
     temps.push(r.stats.ms);
@@ -123,7 +121,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
       let suivi = '';
       if (r.suggestion) {
         suggerees++;
-        const r2 = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: r.suggestion.dplusM, terrain: c.terrain, seed: SEED, arriveeM: ARRIVEE_M });
+        const r2 = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: r.suggestion.dplusM, terrain: c.terrain, seed: SEED });
         const ok2 = r2.loops.some((l) => l.dansTolerance);
         if (ok2) suggereesOk++;
         suivi = ` → suggestion ${r.suggestion.dplusM} m suivie : ${ok2 ? 'aboutit' : '**n\u2019aboutit pas**'}`;
@@ -262,7 +260,7 @@ if (!jeuDemande || jeuDemande === 'annecy') {
     let verdict: string;
     let message = '';
     try {
-      const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, arriveeM: ARRIVEE_M });
+      const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain });
       message = r.message;
       // Une cible impossible depuis le point exact mais réalisable à moins
       // de 2 km n'est pas une cible impossible pour l'app.
