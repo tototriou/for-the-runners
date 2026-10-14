@@ -12,8 +12,8 @@
      l'IGN est injoignable.
   4. Par arête : longueur, D+ dans chaque sens (altitude échantillonnée tous
      les 30 m), type (route / sentier), part de la longueur dans un parc ou
-     jardin public (couche Overture « land_use »), géométrie simplifiée avec
-     altitudes.
+     jardin public (couche Overture « land_use ») et au bord de l'eau (à
+     moins de 30 m, couche « water »), géométrie simplifiée avec altitudes.
   5. Export : une tuile JSON gzip par case de la grille globale
      (TUILE_LAT × TUILE_LON degrés) + public/data/manifest.json.
 
@@ -90,6 +90,14 @@ ACCES_FERMES = {"private", "no", "customers", "permit", "disabled", "military", 
 # jardin d'immeuble (Paris : 1 250 sur 1 860) : il faut un nom ou un accès
 # déclaré ouvert pour le compter.
 ACCES_OUVERTS = {"yes", "public", "permissive", "designated"}
+
+# Eau courante ou dormante au bord de laquelle on aime courir. Écartés :
+# piscines et bassins (sous-type human_made, bassins de rétention), fossés.
+SOUS_TYPES_EAU = {"river", "canal", "stream", "lake", "water", "pond", "reservoir"}
+CLASSES_EAU_EXCLUES = {"ditch", "drain"}
+# Un chemin de berge passe à moins de 30 m de l'eau (ou de l'axe d'une
+# rivière cartographiée en ligne) ; au-delà, c'est la rue parallèle.
+BORD_EAU_M = 30.0
 
 PAS_ECHANTILLON_M = 30.0
 # 1 m : au-delà, les lacets des sentiers étaient coupés à l'écran et dans
@@ -346,52 +354,97 @@ def parc_public(cls, tags, nom):
     return True
 
 
-def charger_parcs(region, release):
-    """Polygones des parcs et jardins publics de la région (shapely), en cache."""
+def lire_base(region, release, type_, garder, etiquette, version):
+    """Géométries WKB d'une couche du thème « base » d'Overture retenues par
+    `garder(row)`, dans le rectangle de la région ; mises en cache."""
     import fsspec
     import pyarrow.parquet as pq
-    import shapely
 
     bbox = region["bbox"]
-    cle = CACHE / f"parcs1-{region['id']}-{release}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
+    cle = CACHE / f"{etiquette}{version}-{region['id']}-{release}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
     if cle.exists():
-        print(f"[parcs] cache : {cle.name}")
+        print(f"[{etiquette}] cache : {cle.name}")
         with gzip.open(cle, "rb") as f:
-            wkbs = pickle.load(f)
-    else:
-        xmin, ymin, xmax, ymax = bbox
-        fs = fsspec.filesystem("https")
-        wkbs, t0 = [], time.time()
-        for cle_f in lister_fichiers(release, "base", "land_use"):
-            with fs.open(OVERTURE + cle_f, block_size=1 << 20) as f:
-                pf = pq.ParquetFile(f)
-                md = pf.metadata
-                idx = {md.row_group(0).column(i).path_in_schema: i for i in range(md.row_group(0).num_columns)}
-                groupes = []
-                for g in range(md.num_row_groups):
-                    rg = md.row_group(g)
-                    st = {n: rg.column(idx[f"bbox.{n}"]).statistics for n in ("xmin", "xmax", "ymin", "ymax")}
-                    if any(x is None or not x.has_min_max for x in st.values()) or (
-                            st["xmin"].min <= xmax and st["xmax"].max >= xmin
-                            and st["ymin"].min <= ymax and st["ymax"].max >= ymin):
-                        groupes.append(g)
-                if not groupes:
-                    continue
-                table = pf.read_row_groups(groupes, columns=["class", "geometry", "bbox", "source_tags", "names"])
-            for row in table.to_pylist():
-                b = row["bbox"]
-                if b["xmax"] < xmin or b["xmin"] > xmax or b["ymax"] < ymin or b["ymin"] > ymax:
-                    continue
-                if parc_public(row["class"], dict(row["source_tags"] or []), (row["names"] or {}).get("primary")):
-                    wkbs.append(row["geometry"])
-        print(f"[parcs] {region['id']} : {len(wkbs)} parcs et jardins publics ({time.time() - t0:.0f} s)", flush=True)
-        CACHE.mkdir(exist_ok=True)
-        with gzip.open(cle, "wb") as f:
-            pickle.dump(wkbs, f)
+            return pickle.load(f)
+    xmin, ymin, xmax, ymax = bbox
+    fs = fsspec.filesystem("https")
+    wkbs, t0 = [], time.time()
+    for cle_f in lister_fichiers(release, "base", type_):
+        with fs.open(OVERTURE + cle_f, block_size=1 << 20) as f:
+            pf = pq.ParquetFile(f)
+            md = pf.metadata
+            idx = {md.row_group(0).column(i).path_in_schema: i for i in range(md.row_group(0).num_columns)}
+            groupes = []
+            for g in range(md.num_row_groups):
+                rg = md.row_group(g)
+                st = {n: rg.column(idx[f"bbox.{n}"]).statistics for n in ("xmin", "xmax", "ymin", "ymax")}
+                if any(x is None or not x.has_min_max for x in st.values()) or (
+                        st["xmin"].min <= xmax and st["xmax"].max >= xmin
+                        and st["ymin"].min <= ymax and st["ymax"].max >= ymin):
+                    groupes.append(g)
+            if not groupes:
+                continue
+            table = pf.read_row_groups(groupes, columns=["subtype", "class", "geometry", "bbox", "source_tags", "names"])
+        for row in table.to_pylist():
+            b = row["bbox"]
+            if b["xmax"] < xmin or b["xmin"] > xmax or b["ymax"] < ymin or b["ymin"] > ymax:
+                continue
+            if garder(row):
+                wkbs.append(row["geometry"])
+    print(f"[{etiquette}] {region['id']} : {len(wkbs)} géométries retenues ({time.time() - t0:.0f} s)", flush=True)
+    CACHE.mkdir(exist_ok=True)
+    with gzip.open(cle, "wb") as f:
+        pickle.dump(wkbs, f)
+    return wkbs
+
+
+class Projection:
+    """Plan local en mètres (équirectangulaire au centre de la région) :
+    assez juste à l'échelle d'une région pour des tampons de quelques
+    dizaines de mètres."""
+
+    def __init__(self, region):
+        x0, y0, x1, y1 = region["bbox"]
+        self.lat0, self.lon0 = (y0 + y1) / 2, (x0 + x1) / 2
+        self.kx = math.cos(math.radians(self.lat0)) * 111320.0
+        self.ky = 111320.0
+
+    def xy(self, lon, lat):
+        return (np.asarray(lon) - self.lon0) * self.kx, (np.asarray(lat) - self.lat0) * self.ky
+
+
+def charger_parcs(region, release):
+    """Parcs et jardins publics de la région : union shapely préparée (degrés)."""
+    import shapely
+
+    wkbs = lire_base(region, release, "land_use", lambda r: parc_public(
+        r["class"], dict(r["source_tags"] or []), (r["names"] or {}).get("primary")), "parcs", 1)
     geoms = [g for g in shapely.from_wkb(wkbs) if g.geom_type in ("Polygon", "MultiPolygon")]
     union = shapely.union_all(shapely.make_valid(geoms)) if geoms else shapely.Polygon()
     shapely.prepare(union)
     return union
+
+
+def eau_retenue(row):
+    if row["subtype"] not in SOUS_TYPES_EAU or row["class"] in CLASSES_EAU_EXCLUES:
+        return False
+    return row["subtype"] != "reservoir" or row["class"] == "reservoir"
+
+
+def charger_bord_eau(region, release, proj):
+    """Bande de BORD_EAU_M autour de l'eau de la région, en plan local (m)."""
+    import shapely
+
+    wkbs = lire_base(region, release, "water", eau_retenue, "eau", 1)
+    geoms = [g for g in shapely.from_wkb(wkbs)
+             if g.geom_type in ("Polygon", "MultiPolygon", "LineString", "MultiLineString")]
+    if not geoms:
+        return shapely.Polygon()
+    geoms = shapely.transform(np.array(geoms, dtype=object),
+                              lambda c: np.column_stack(proj.xy(c[:, 0], c[:, 1])))
+    bande = shapely.union_all(shapely.buffer(shapely.make_valid(geoms), BORD_EAU_M, quad_segs=4))
+    shapely.prepare(bande)
+    return bande
 
 
 def filtrer_sous_classes(aretes):
@@ -735,7 +788,7 @@ def denivele(z):
     return float(d[d > 0].sum()), float(-d[d < 0].sum())
 
 
-def exporter_region(region, aretes, mnt, nom_mnt, release, parcs):
+def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj):
     t0 = time.time()
     # Identifiants de nœud uniques dans la région, positions.
     ids, pos = {}, {}
@@ -764,10 +817,15 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs):
             mil_lat.append((lat_pts[k] + lat_pts[k2]) / 2)
             mil_lon.append((lon_pts[k] + lon_pts[k2]) / 2)
             mil_e.append(e)
-    dedans = shapely.contains_xy(parcs, np.array(mil_lon), np.array(mil_lat))
     mil_e = np.array(mil_e)
-    part_parc = np.bincount(mil_e, weights=dedans, minlength=len(plan)) / np.maximum(1, np.bincount(mil_e, minlength=len(plan)))
+    n_mil = np.maximum(1, np.bincount(mil_e, minlength=len(plan)))
+    dedans = shapely.contains_xy(parcs, np.array(mil_lon), np.array(mil_lat))
+    part_parc = np.bincount(mil_e, weights=dedans, minlength=len(plan)) / n_mil
     print(f"[parcs] {region['id']} : {(part_parc > 0.5).sum()} arêtes surtout dans un parc", flush=True)
+    px, py = proj.xy(np.array(mil_lon), np.array(mil_lat))
+    au_bord = shapely.contains_xy(bord_eau, px, py)
+    part_eau = np.bincount(mil_e, weights=au_bord, minlength=len(plan)) / n_mil
+    print(f"[eau] {region['id']} : {(part_eau > 0.5).sum()} arêtes surtout au bord de l'eau", flush=True)
     noeuds = sorted(ids, key=ids.get)
     for n in noeuds:
         lat_pts.append(round(pos[n][0], 5))
@@ -801,13 +859,14 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs):
             cur = (q(pos[n][0]), q(pos[n][1]))
             flat_noeuds += [cur[0] - prev[0], cur[1] - prev[1]]
             prev = cur
-        A, B, L, UP_AB, UP_BA, T, CL, PA, G = [], [], [], [], [], [], [], [], []
+        A, B, L, UP_AB, UP_BA, T, CL, PA, EA, G = [], [], [], [], [], [], [], [], [], []
         for e in liste:
             a, b, coords, t, cls = aretes[e]
             d0, n0, simp, lg = plan[e]
             up, down = denivele(z[d0:d0 + n0])
             A.append(loc[a]); B.append(loc[b]); T.append(t); CL.append(cls)
             PA.append(int(round(part_parc[e] * 100)))
+            EA.append(int(round(part_eau[e] * 100)))
             L.append(int(round(lg * 10)))
             UP_AB.append(int(round(up * 10))); UP_BA.append(int(round(down * 10)))
             zs = z[d0 + n0:d0 + n0 + len(simp)]
@@ -823,7 +882,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs):
             "ids": [ids[n] for n in ids_loc],
             "nodes": flat_noeuds,
             "nodeEle": [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc],
-            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA},
+            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA},
             "geom": G,
         }
         brut = json.dumps(doc, separators=(",", ":")).encode()
@@ -871,7 +930,9 @@ def main():
         aretes = garder_grandes_composantes(aretes)
         aretes = fusionner_degre_2(aretes)
         parcs = charger_parcs(region, release)
-        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs)
+        proj = Projection(region)
+        bord_eau = charger_bord_eau(region, release, proj)
+        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, proj)
 
     manifeste = {
         "v": 2, "tileDeg": [TUILE_LAT, TUILE_LON],
