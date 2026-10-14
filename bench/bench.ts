@@ -46,7 +46,7 @@ interface Critere { nom: string; seuil: string; valeur: string; ok: boolean }
 interface ResultatJeu {
   id: string; titre: string; description: string; criteres: Critere[]; echecs: string[];
   /** Part moyenne de distance par famille de voie, et boucles avec ≥ 1 km de grande route. */
-  composition: number[]; grandesRoutes1km: number; nbBoucles: number; parc: number; eau: number; ecartArrivee: number;
+  composition: number[]; grandesRoutes1km: number; nbBoucles: number; parc: number; eau: number; rapide: number; ecartArrivee: number;
   lignes: string[]; reponses: { c: Cas; r: LoopResponse }[]; msChargementMax: number;
 }
 
@@ -79,6 +79,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   const composition = new Array(FAMILLES.length).fill(0);
   let parc = 0;
   let eau = 0;
+  let rapide = 0;
   let ecartArrivee = 0;
   let suggereesOk = 0;
   let msChargementMax = 0;
@@ -106,6 +107,7 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
         if (parFamille[0] >= 1000) grandesRoutes1km++;
         parc += l.parcM / l.distanceM;
         eau += l.eauM / l.distanceM;
+        rapide += l.rapideM / l.distanceM;
         ecartArrivee += l.ecartArriveeM;
       }
     }
@@ -172,8 +174,8 @@ async function jouer(id: string, titre: string, description: string, cas: Cas[],
   for (const k of criteres) console.log(`  ${k.ok ? 'OK ' : 'KO '} ${k.nom} : ${k.valeur} (seuil ${k.seuil})`);
   if (tMoy > CIBLE_TEMPS_MS) console.log(`  Note : temps moyen au-dessus de la cible de ${CIBLE_TEMPS_MS / 1000} s.`);
   const compo = composition.map((v) => v / Math.max(1, nbBoucles));
-  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; sans voitures ${((compo[3] + compo[4]) * 100).toFixed(1)} % ; dans les parcs ${((parc / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; au bord de l'eau ${((eau / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; arrivée à ${Math.round(ecartArrivee / Math.max(1, nbBoucles))} m du départ en moyenne ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
-  return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax, composition: compo, grandesRoutes1km, nbBoucles, parc: parc / Math.max(1, nbBoucles), eau: eau / Math.max(1, nbBoucles), ecartArrivee: ecartArrivee / Math.max(1, nbBoucles) };
+  console.log(`  Composition : ${FAMILLES.map(([n], k) => `${n} ${(compo[k] * 100).toFixed(1)} %`).join(' ; ')} ; sans voitures ${((compo[3] + compo[4]) * 100).toFixed(1)} % ; dans les parcs ${((parc / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; au bord de l'eau ${((eau / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; le long d'une voie rapide ${((rapide / Math.max(1, nbBoucles)) * 100).toFixed(1)} % ; arrivée à ${Math.round(ecartArrivee / Math.max(1, nbBoucles))} m du départ en moyenne ; boucles avec ≥ 1 km de grande route : ${grandesRoutes1km}/${nbBoucles}`);
+  return { id, titre, description, criteres, echecs, lignes, reponses, msChargementMax, composition: compo, grandesRoutes1km, nbBoucles, parc: parc / Math.max(1, nbBoucles), eau: eau / Math.max(1, nbBoucles), rapide: rapide / Math.max(1, nbBoucles), ecartArrivee: ecartArrivee / Math.max(1, nbBoucles) };
 }
 
 // ------------------------------------------------------------------- jeux
@@ -320,6 +322,7 @@ ${FAMILLES.map(([n], k) => `| ${n} | ${(j.composition[k] * 100).toFixed(1)} % |`
 | **Total sans voitures** (pistes, piétonnes, sentiers) | ${((j.composition[3] + j.composition[4]) * 100).toFixed(1)} % |
 | Dans les parcs et jardins publics (toutes voies) | ${(j.parc * 100).toFixed(1)} % |
 | Au bord de l'eau, à moins de 30 m (toutes voies) | ${(j.eau * 100).toFixed(1)} % |
+| Le long d'une autoroute ou voie rapide, à moins de 50 m | ${(j.rapide * 100).toFixed(1)} % |
 
 Boucles avec au moins 1 km de grande route : ${j.grandesRoutes1km} sur ${j.nbBoucles}. Arrivée à ${Math.round(j.ecartArrivee)} m du départ en moyenne (400 m tolérés).
 
