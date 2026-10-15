@@ -17,6 +17,9 @@
       "rgealti": [
         "D074",
         "D073"
+      ],
+      "osm": [
+        "europe/france/rhone_alpes/haute_savoie-latest.osm.pbf"
       ]
     },
     {
@@ -39,6 +42,9 @@
         "D057",
         "D090",
         "D054"
+      ],
+      "osm": [
+        "europe/france/alsace-latest.osm.pbf"
       ]
     },
     {
@@ -71,6 +77,9 @@
         "D010",
         "D051",
         "D002"
+      ],
+      "osm": [
+        "europe/france/ile_de_france-latest.osm.pbf"
       ]
     }
   ]

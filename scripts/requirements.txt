@@ -6,3 +6,4 @@ aiohttp
 pyproj
 py7zr
 shapely
+osmium

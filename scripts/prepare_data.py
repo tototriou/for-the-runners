@@ -14,7 +14,9 @@
      les 30 m), type (route / sentier), part de la longueur dans un parc ou
      jardin public (couche Overture « land_use ») et au bord de l'eau (à
      moins de 30 m, couche « water ») et près d'une autoroute (150 m) ou
-     voie rapide (75 m), hors tunnels, géométrie simplifiée avec altitudes.
+     voie rapide (75 m), hors tunnels, sur un itinéraire piéton balisé
+     d'OpenStreetMap (15 m, extraits régionaux d'openstreetmap.fr),
+     géométrie simplifiée avec altitudes.
   5. Export : une tuile JSON gzip par case de la grille globale
      (TUILE_LAT × TUILE_LON degrés) + public/data/manifest.json.
 
@@ -34,6 +36,7 @@ import pickle
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import time
 from collections import defaultdict
@@ -104,6 +107,12 @@ BORD_EAU_M = 30.0
 # à Strasbourg) : bande de 150 m ; voie rapide (route à chaussées séparées) :
 # 75 m. Les tunnels sont ignorés.
 BANDES_RAPIDES_M = {"motorway": 150.0, "trunk": 75.0}
+# Itinéraires piétons balisés d'OpenStreetMap (relations route=*) : chemins
+# choisis par d'autres marcheurs et coureurs. Les itinéraires vélo, souvent sur
+# route, sont laissés de côté. Un tronçon en fait partie à 15 m près.
+OSM_EXTRAITS = "https://download.openstreetmap.fr/extracts/"
+ITINERAIRES_PIETONS = {"hiking", "foot", "walking", "running", "fitness_trail", "nordic_walking"}
+BORD_ITINERAIRE_M = 15.0
 
 PAS_ECHANTILLON_M = 30.0
 # 1 m : au-delà, les lacets des sentiers étaient coupés à l'écran et dans
@@ -456,6 +465,63 @@ def charger_bande_rapide(region, release, proj):
                                       lambda c: np.column_stack(proj.xy(c[:, 0], c[:, 1])))
             bandes.append(shapely.union_all(shapely.buffer(geoms, largeur, quad_segs=4)))
     bande = shapely.union_all(bandes) if bandes else shapely.Polygon()
+    shapely.prepare(bande)
+    return bande
+
+
+def lire_itineraires(region):
+    """Géométries (listes de [lon, lat]) des chemins des itinéraires piétons
+    OSM de la région, depuis les extraits régionaux (champ « osm »), en cache."""
+    import osmium
+
+    bbox = region["bbox"]
+    cle = CACHE / f"itineraires1-{region['id']}-{'_'.join(f'{v:.3f}' for v in bbox)}.pkl.gz"
+    if cle.exists():
+        print(f"[itinéraires] cache : {cle.name}")
+        with gzip.open(cle, "rb") as f:
+            return pickle.load(f)
+    (CACHE / "osm").mkdir(parents=True, exist_ok=True)
+    lignes, t0 = [], time.time()
+    for chemin in region.get("osm", []):
+        fichier = CACHE / "osm" / Path(chemin).name
+        if not fichier.exists():
+            print(f"[itinéraires] téléchargement {chemin}", flush=True)
+            subprocess.run(["curl", "-sS", "-L", "--retry", "4", "-o", str(fichier), OSM_EXTRAITS + chemin], check=True)
+        voies = set()
+
+        class Relations(osmium.SimpleHandler):
+            def relation(self, r):
+                if r.tags.get("type") == "route" and r.tags.get("route") in ITINERAIRES_PIETONS:
+                    voies.update(m.ref for m in r.members if m.type == "w")
+
+        Relations().apply_file(str(fichier))
+
+        class Voies(osmium.SimpleHandler):
+            def way(self, w):
+                if w.id in voies:
+                    try:
+                        lignes.append([[n.lon, n.lat] for n in w.nodes])
+                    except osmium.InvalidLocationError:
+                        pass
+
+        Voies().apply_file(str(fichier), locations=True)
+    xmin, ymin, xmax, ymax = bbox
+    lignes = [l for l in lignes if len(l) >= 2 and any(xmin <= x <= xmax and ymin <= y <= ymax for x, y in l)]
+    print(f"[itinéraires] {region['id']} : {len(lignes)} chemins d'itinéraires piétons ({time.time() - t0:.0f} s)", flush=True)
+    with gzip.open(cle, "wb") as f:
+        pickle.dump(lignes, f)
+    return lignes
+
+
+def charger_bande_itineraires(region, proj):
+    """Bande de BORD_ITINERAIRE_M autour des itinéraires piétons, en plan local (m)."""
+    import shapely
+
+    lignes = lire_itineraires(region)
+    if not lignes:
+        return shapely.Polygon()
+    geoms = [shapely.LineString(np.column_stack(proj.xy(np.array(l)[:, 0], np.array(l)[:, 1]))) for l in lignes]
+    bande = shapely.union_all(shapely.buffer(np.array(geoms, dtype=object), BORD_ITINERAIRE_M, quad_segs=4))
     shapely.prepare(bande)
     return bande
 
@@ -823,7 +889,7 @@ def denivele(z):
     return float(d[d > 0].sum()), float(-d[d < 0].sum())
 
 
-def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, proj):
+def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, bande_itin, proj):
     t0 = time.time()
     # Identifiants de nœud uniques dans la région, positions.
     ids, pos = {}, {}
@@ -864,6 +930,9 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
     pres = shapely.contains_xy(bande_rapide, px, py)
     part_rapide = np.bincount(mil_e, weights=pres, minlength=len(plan)) / n_mil
     print(f"[rapides] {region['id']} : {(part_rapide > 0.5).sum()} arêtes surtout le long d'une voie rapide", flush=True)
+    sur = shapely.contains_xy(bande_itin, px, py)
+    part_itin = np.bincount(mil_e, weights=sur, minlength=len(plan)) / n_mil
+    print(f"[itinéraires] {region['id']} : {(part_itin > 0.5).sum()} arêtes surtout sur un itinéraire piéton", flush=True)
     noeuds = sorted(ids, key=ids.get)
     for n in noeuds:
         lat_pts.append(round(pos[n][0], 5))
@@ -897,7 +966,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
             cur = (q(pos[n][0]), q(pos[n][1]))
             flat_noeuds += [cur[0] - prev[0], cur[1] - prev[1]]
             prev = cur
-        A, B, L, UP_AB, UP_BA, T, CL, PA, EA, RA, G = [], [], [], [], [], [], [], [], [], [], []
+        A, B, L, UP_AB, UP_BA, T, CL, PA, EA, RA, IT, G = [], [], [], [], [], [], [], [], [], [], [], []
         for e in liste:
             a, b, coords, t, cls = aretes[e]
             d0, n0, simp, lg = plan[e]
@@ -906,6 +975,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
             PA.append(int(round(part_parc[e] * 100)))
             EA.append(int(round(part_eau[e] * 100)))
             RA.append(int(round(part_rapide[e] * 100)))
+            IT.append(int(round(part_itin[e] * 100)))
             L.append(int(round(lg * 10)))
             UP_AB.append(int(round(up * 10))); UP_BA.append(int(round(down * 10)))
             zs = z[d0 + n0:d0 + n0 + len(simp)]
@@ -921,7 +991,7 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
             "ids": [ids[n] for n in ids_loc],
             "nodes": flat_noeuds,
             "nodeEle": [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc],
-            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA, "rapide": RA},
+            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA, "rapide": RA, "itin": IT},
             "geom": G,
         }
         brut = json.dumps(doc, separators=(",", ":")).encode()
@@ -972,7 +1042,8 @@ def main():
         proj = Projection(region)
         bord_eau = charger_bord_eau(region, release, proj)
         bande_rapide = charger_bande_rapide(region, release, proj)
-        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, proj)
+        bande_itin = charger_bande_itineraires(region, proj)
+        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, bande_itin, proj)
 
     manifeste = {
         "v": 2, "tileDeg": [TUILE_LAT, TUILE_LON],
