@@ -314,6 +314,8 @@ function afficher(res: Reponse) {
         }${
           loop.eauM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.eauM / loop.distanceM) * 100)} % au bord de l'eau` : ''
         }${
+          loop.itinM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.itinM / loop.distanceM) * 100)} % sur sentier balisé` : ''
+        }${
           loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
         }${
           loop.rapideM >= 200 ? ` · <span class="ko">${(loop.rapideM / 1000).toFixed(1).replace('.', ',')} km le long d'une voie rapide</span>` : ''

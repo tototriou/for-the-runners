@@ -30,7 +30,7 @@ export interface ZoneDoc {
   };
   nodes: number[];
   nodeEle: number[];
-  edges: { a: number[]; b: number[]; len: number[]; upAB: number[]; upBA: number[]; type: number[]; cls?: number[]; parc?: number[]; eau?: number[]; rapide?: number[] };
+  edges: { a: number[]; b: number[]; len: number[]; upAB: number[]; upBA: number[]; type: number[]; cls?: number[]; parc?: number[]; eau?: number[]; rapide?: number[]; itin?: number[] };
   geom: number[][];
 }
 
@@ -59,6 +59,8 @@ export interface Graph {
   eau: Float32Array;
   /** Part de la longueur à moins de 50 m d'une autoroute ou voie rapide (0 à 1). */
   rapide: Float32Array;
+  /** Part de la longueur sur un itinéraire piéton balisé d'OpenStreetMap (0 à 1). */
+  itin: Float32Array;
   /** Points intérieurs de l'arête e (sens a → b) : geomOff[e]..geomOff[e+1]. */
   geomOff: Int32Array;
   geomLat: Float64Array;
@@ -110,6 +112,7 @@ export function decodeGraph(doc: ZoneDoc): Graph {
   const parc = E.parc ? Float32Array.from(E.parc, (v) => v / 100) : new Float32Array(m);
   const eau = E.eau ? Float32Array.from(E.eau, (v) => v / 100) : new Float32Array(m);
   const rapide = E.rapide ? Float32Array.from(E.rapide, (v) => v / 100) : new Float32Array(m);
+  const itin = E.itin ? Float32Array.from(E.itin, (v) => v / 100) : new Float32Array(m);
 
   const geomOff = new Int32Array(m + 1);
   for (let e = 0; e < m; e++) geomOff[e + 1] = geomOff[e] + doc.geom[e].length / 3;
@@ -153,7 +156,7 @@ export function decodeGraph(doc: ZoneDoc): Graph {
   }
 
   const g: Graph = {
-    meta: doc.meta, n, m, lat, lon, ele, x, y, a, b, len, upAB, upBA, type, cls, parc, eau, rapide,
+    meta: doc.meta, n, m, lat, lon, ele, x, y, a, b, len, upAB, upBA, type, cls, parc, eau, rapide, itin,
     geomOff, geomLat, geomLon, geomEle, adjStart, adjEdge, adjTo, adjFwd,
     grid: undefined as unknown as SpatialGrid,
   };

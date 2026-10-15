@@ -103,6 +103,7 @@ interface Cand {
   partSansVoiture: number;
   virages: number;
   partRapide: number;
+  partItin: number;
   score: number;
 }
 

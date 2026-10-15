@@ -82,8 +82,10 @@ export interface Loop {
   ecartArriveeM: number;
   /** Virages serrés par km. */
   virages: number;
-  /** Distance le long d'une autoroute ou voie rapide (à moins de 50 m), en mètres. */
+  /** Distance près d'une autoroute (150 m) ou voie rapide (75 m), en mètres. */
   rapideM: number;
+  /** Distance sur un itinéraire piéton balisé d'OpenStreetMap, en mètres. */
+  itinM: number;
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -150,6 +152,8 @@ interface Candidate {
   virages: number;
   /** Part de la distance le long d'une autoroute ou voie rapide. */
   partRapide: number;
+  /** Part de la distance sur un itinéraire piéton balisé. */
+  partItin: number;
   score: number;
 }
 
@@ -264,6 +268,16 @@ const BONUS_EAU = 0.5;
  * restait pris depuis Neudorf ; avec 150 m, 1,2 % et plus aucun tirage par là.
  */
 const PENALITE_RAPIDE = 8;
+/**
+ * Itinéraire piéton balisé d'OpenStreetMap (randonnée, piéton, course,
+ * parcours de santé) : des chemins choisis par d'autres marcheurs et coureurs.
+ * Coût moitié moins (comme l'eau et les parcs, rabais non cumulés) et 2
+ * points de score par point de part au choix. Sur 15 départs : 26 → 34 % de
+ * la distance sur sentier balisé, 58 demandes sur 60 tenues (59 sans) ; depuis
+ * la Krutenau, la n°1 passe à 33-44 % (18-27 % sans) de 5 à 16 km.
+ */
+const BONUS_ITIN = 0.5;
+const POIDS_ITIN_CHOIX = 2;
 const POIDS_RAPIDE_CHOIX = 6;
 /**
  * Poids du choix final, calés sur un circuit modèle : le tour de la Grande
@@ -328,11 +342,11 @@ const FACTEUR_AGREMENT_DPLUS = 0.5;
 const PENTE_PLATE = 15;
 export const estPlate = (t: Cible) => t.h == null || t.h / (t.d / 1000) < PENTE_PLATE;
 export const cleChoix = (
-  c: { score: number; partParc: number; partEau: number; partSansVoiture: number; partRapide: number; virages: number },
+  c: { score: number; partParc: number; partEau: number; partSansVoiture: number; partRapide: number; partItin: number; virages: number },
   plate: boolean,
 ) => {
   const agrement = POIDS_PARC_CHOIX * c.partParc + POIDS_EAU_CHOIX * c.partEau + POIDS_SANS_VOITURE_CHOIX * c.partSansVoiture
-    - POIDS_RAPIDE_CHOIX * c.partRapide;
+    - POIDS_RAPIDE_CHOIX * c.partRapide + POIDS_ITIN_CHOIX * c.partItin;
   return plate ? c.score - agrement + POIDS_VIRAGES * c.virages : c.score - FACTEUR_AGREMENT_DPLUS * agrement;
 };
 const FACTEURS_PAR_CODE = Float64Array.from({ length: 256 }, (_, k) =>
@@ -360,7 +374,7 @@ export function coutsAretes(g: Graph, beta: number, terrain: Terrain) {
     const L = g.len[e];
     const relief = L > 0 ? (g.upAB[e] + g.upBA[e]) / L : 0;
     const fPente = Math.min(5, Math.max(0.2, Math.exp(-beta * relief * 10)));
-    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]] * Math.min(1 - BONUS_PARC * g.parc[e], 1 - BONUS_EAU * g.eau[e])
+    const f = fPente * (g.type[e] === TYPE_SENTIER ? fSentier : fRoute) * FACTEURS_PAR_CODE[g.cls[e]] * Math.min(1 - BONUS_PARC * g.parc[e], 1 - BONUS_EAU * g.eau[e], 1 - BONUS_ITIN * g.itin[e])
       * (1 + PENALITE_RAPIDE * g.rapide[e]);
     cost[e] = Math.max(L, 0.1) * f;
     if (f < minFactor) minFactor = f;
@@ -923,6 +937,7 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   let eauM = 0;
   let svM = 0;
   let rapideM = 0;
+  let itinM = 0;
   const count = new Map<number, number>();
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
@@ -931,6 +946,7 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
     eauM += g.len[e] * g.eau[e];
     if (CODES_SANS_VOITURE.has(g.cls[e])) svM += g.len[e];
     rapideM += g.len[e] * g.rapide[e];
+    itinM += g.len[e] * g.itin[e];
     dplusM += dirs[i] ? g.upAB[e] : g.upBA[e];
     count.set(e, (count.get(e) ?? 0) + 1);
   }
@@ -938,7 +954,8 @@ export function mesurer(g: Graph, edges: number[], dirs: number[]) {
   for (const [e, n] of count) if (n > 1) rep += g.len[e] * n;
   return { distanceM, dplusM, allerRetour: distanceM > 0 ? rep / distanceM : 0, partParc: distanceM > 0 ? parcM / distanceM : 0, partEau: distanceM > 0 ? eauM / distanceM : 0, partSansVoiture: distanceM > 0 ? svM / distanceM : 0,
     virages: viragesParKm(g, edges, dirs),
-    partRapide: distanceM > 0 ? rapideM / distanceM : 0 };
+    partRapide: distanceM > 0 ? rapideM / distanceM : 0,
+    partItin: distanceM > 0 ? itinM / distanceM : 0 };
 }
 
 function score(m: { distanceM: number; dplusM: number; allerRetour: number }, t: Cible) {
@@ -981,6 +998,7 @@ export function finaliser(g: Graph, c: Omit<Candidate, 'p'>, t: Cible): Loop {
     eauM: c.edges.reduce((s, e) => s + g.eau[e] * g.len[e], 0),
     virages: c.virages,
     rapideM: c.partRapide * c.distanceM,
+    itinM: c.partItin * c.distanceM,
     ecartArriveeM: haversine(coords[0][0], coords[0][1], coords[coords.length - 1][0], coords[coords.length - 1][1]),
     sansVoitureM: c.edges.reduce((s, e) => s + (CODES_SANS_VOITURE.has(g.cls[e]) ? g.len[e] : 0), 0),
     dansTolerance: dansTolerance(c, t),

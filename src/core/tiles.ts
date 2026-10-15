@@ -77,7 +77,7 @@ export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
   const index = new Map<number, number>();
   const nodes: number[] = [];
   const nodeEle: number[] = [];
-  const edges: Required<ZoneDoc['edges']> = { a: [], b: [], len: [], upAB: [], upBA: [], type: [], cls: [], parc: [], eau: [], rapide: [] };
+  const edges: Required<ZoneDoc['edges']> = { a: [], b: [], len: [], upAB: [], upBA: [], type: [], cls: [], parc: [], eau: [], rapide: [], itin: [] };
   const geom: number[][] = [];
   let prevLa = 0;
   let prevLo = 0;
@@ -112,6 +112,7 @@ export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
       edges.parc.push(E.parc?.[e] ?? 0);
       edges.eau.push(E.eau?.[e] ?? 0);
       edges.rapide.push(E.rapide?.[e] ?? 0);
+      edges.itin.push(E.itin?.[e] ?? 0);
       geom.push(t.geom[e]);
     }
   }
