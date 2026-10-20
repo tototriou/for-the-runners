@@ -17,12 +17,24 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
    région couverte, le départ y est placé (bouton « Ma position » pour y
    revenir). Sinon, choisis la région, puis touche la carte pour placer le
    départ.
-2. Saisis la distance (km), le D+ (m) et le terrain (mixte, sentiers, route).
-   Le D+ est facultatif : laissé vide, l'app propose des boucles de la
-   distance demandée, classées du plus roulant au plus vallonné, chacune
-   avec son D+.
-3. « Générer les boucles » : 3 à 5 boucles, avec leurs écarts à la cible, le
-   tracé et le profil. Le bouton GPX télécharge la boucle pour une montre.
+2. Règle la distance (− / +, ou 5, 8, 10, 15, 21,1 km), le D+ (« Libre » ou
+   « Visé ») et le type de séance ; terrain et zone sont sous « Terrain et
+   zone ». En D+ libre, l'app propose des boucles de la distance demandée,
+   classées du plus roulant au plus vallonné, chacune avec son D+.
+3. « Générer les boucles » : 3 à 5 boucles, en cartes à faire défiler sur
+   téléphone, en liste sur ordinateur, avec leurs écarts à la cible. « Voir
+   la boucle » ouvre le détail : chiffres, séance, parcours et profil. Le
+   bouton GPX télécharge la boucle pour une montre.
+
+**Interface.** Sur téléphone, la carte occupe l'écran et un panneau monte du
+bas (la poignée le réduit) ; sur ordinateur, la colonne est à droite et le
+profil s'affiche en large sous la carte. Le profil est coloré par pente
+(par tranches de 100 m : moins de 5 %, 5-10 %, 10-15 %, plus de 15 %), avec
+les altitudes, un bandeau du type de voie (sans voitures, route, chemin) et
+les chiffres clés (montée, point haut et bas, plus forte pente en montée et
+en descente). Survoler ou toucher le profil affiche l'altitude et la pente
+au point, repéré aussi sur la carte. Mode sombre selon le réglage du
+système.
 
 Tolérance visée : ±500 m sur la distance (±5 % au-delà de 10 km), ±15 % sur
 le D+. Dans cette fourchette, l'écart de distance ne compte presque plus :
@@ -75,19 +87,19 @@ ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
 « Essayer N m de D+ »).
 
-**Type de séance.** Facultatif : sans choix, rien ne change. Avec un type
-de séance, la boucle s'adapte à l'entraînement :
+**Type de séance.** Footing par défaut : la boucle libre, rien ne change.
+Avec un autre type de séance, la boucle s'adapte à l'entraînement :
 
-- **Footing** et **Sortie longue** : la boucle libre, telle quelle ; c'est
-  la distance choisie qui fait la sortie longue.
+- **Footing** : la boucle libre, telle quelle.
 - **Fractionné** et **Seuil** : un tronçon continu, plat et sans traversée
   (1 000 m et 3 000 m par défaut, réglables) ; le D+ est évité.
 - **Côtes** : une côte franche, de 150 à 400 m à 5–12 %, plutôt que des
   lacets.
-- **Récupération** : plat, sur chemins, sans voitures.
 
-Chaque boucle affiche ce qui compte pour la séance (tronçon continu, côte,
-traversées par km) et prévient quand le quartier ne le permet pas.
+Chaque boucle affiche ce qui compte pour la séance (tronçon continu, côte)
+et prévient quand le quartier ne le permet pas. Le moteur connaît aussi
+« sortie longue » (identique au footing) et « récupération », que
+l'interface ne propose plus.
 
 **Zone.** Tu peux choisir une zone : un cercle autour du départ (rayon à
 choisir) ou une zone dessinée en touchant la carte (une forêt, un parc, un
@@ -195,6 +207,7 @@ base à changer).
 | `src/core/zone.ts` | Boucles dans une zone : montées et descentes enchaînées vers le D+ visé |
 | `src/core/tiles.ts` | Choix des tuiles autour du départ, cache, fusion en un graphe |
 | `src/core/gpx.ts` | Export GPX 1.1 |
+| `src/core/voies.ts` | Type de voie le long d'une boucle (bandeau du profil) |
 | `src/worker.ts`, `src/main.ts` | Web Worker et interface (Leaflet) |
 | `scripts/prepare_data.py` | Préparation des données |
 | `bench/` | Banc de tests et cas de test |

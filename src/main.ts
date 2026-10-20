@@ -2,53 +2,105 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './style.css';
 import { toGpx } from './core/gpx';
-import type { Loop, LoopResponse } from './core/loops';
+import type { LoopResponse } from './core/loops';
 import { TRONCON_DEFAUT_M, TYPES_SEANCE, type Seance, type TypeSeance } from './core/seances';
 import type { Terrain } from './core/graph';
 import type { Manifest, RegionMeta } from './core/tiles';
+import type { BoucleAffichee, SegmentVoie } from './core/voies';
 import type { Zone, ZoneRequest } from './core/zone';
 
-type Reponse = LoopResponse & { chargement?: { region: string; tuiles: number; ms: number } };
+type Reponse = Omit<LoopResponse, 'loops'> & { loops: BoucleAffichee[]; chargement?: { region: string; tuiles: number; ms: number } };
 
-// Pas d'orange : réservé au départ décalé.
-const COULEURS = ['#2563eb', '#dc2626', '#9333ea', '#a16207', '#0891b2'];
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
+const app = $('app');
+const panel = $('panel');
 const form = $<HTMLFormElement>('form');
 const go = $<HTMLButtonElement>('go');
-const statusEl = $<HTMLParagraphElement>('status');
+const statusEl = $('status');
 const results = $<HTMLOListElement>('results');
+const points = $('points');
 const essayer = $<HTMLButtonElement>('essayer');
-const profileBox = $<HTMLElement>('profile-box');
-const profile = $<HTMLElement>('profile') as unknown as SVGSVGElement;
-const zoneBox = $<HTMLFieldSetElement>('zone-box');
-const zoneType = $<HTMLSelectElement>('zone-type');
+const profilBox = $('profil-box');
+const distanceInput = $<HTMLInputElement>('distance');
+const dplusInput = $<HTMLInputElement>('dplus');
 const rayonInput = $<HTMLInputElement>('rayon');
-const dessinBox = $<HTMLElement>('dessin-box');
 const boutonDessiner = $<HTMLButtonElement>('dessiner');
 const allersRetours = $<HTMLInputElement>('allers-retours');
-const choixSeance = $<HTMLSelectElement>('seance');
 const troncon = $<HTMLInputElement>('troncon');
-const aideSeance = $('seance-aide');
-for (const t of TYPES_SEANCE) choixSeance.add(new Option(t.libelle, t.id));
+const hint = $('hint');
+const consigne = $('consigne');
+const ordinateur = window.matchMedia('(min-width: 900px)');
+
+const couleur = (nom: string) => getComputedStyle(document.documentElement).getPropertyValue(nom).trim();
+const km = (m: number) => (m / 1000).toFixed(1).replace('.', ',');
+/** Écart signé en mètres, arrondi à 10 m : « +120 m », « −40 m ». */
+const metres = (m: number) => `${m >= 0 ? '+' : '−'}${Math.round(Math.abs(m) / 10) * 10} m`;
+const pct = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(0)} %`;
+const valeurRadio = (nom: string) => (form.querySelector<HTMLInputElement>(`input[name="${nom}"]:checked`)?.value ?? '');
+
+/* ---------- Réglages ---------- */
+
+// Séances proposées : la sortie longue et la récupération restent dans le
+// moteur mais ne sont plus montrées (footing = boucle libre).
+const SEANCES_PROPOSEES: TypeSeance[] = ['footing', 'fractionne', 'seuil', 'cotes'];
+let seance: TypeSeance = 'footing';
+const zoneSeances = $('seances');
+for (const id of SEANCES_PROPOSEES) {
+  const t = TYPES_SEANCE.find((x) => x.id === id)!;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'puce seance';
+  b.setAttribute('role', 'radio');
+  b.dataset.seance = id;
+  b.textContent = t.libelle;
+  b.addEventListener('click', () => { seance = id; majSeance(); });
+  zoneSeances.appendChild(b);
+}
 /** Séance choisie, en plus du calcul par défaut (null : boucle libre). */
 function seanceChoisie(): Seance | null {
-  const type = choixSeance.value as TypeSeance | '';
-  if (!type) return null;
+  if (seance === 'footing') return null;
   const v = Number(troncon.value);
-  return TRONCON_DEFAUT_M[type] != null && v > 0 ? { type, tronconM: v } : { type };
+  return TRONCON_DEFAUT_M[seance] != null && v > 0 ? { type: seance, tronconM: v } : { type: seance };
 }
 function majSeance() {
-  const type = choixSeance.value as TypeSeance | '';
-  const avecTroncon = type !== '' && TRONCON_DEFAUT_M[type] != null;
+  for (const b of zoneSeances.querySelectorAll<HTMLElement>('.puce')) b.setAttribute('aria-checked', String(b.dataset.seance === seance));
+  const avecTroncon = TRONCON_DEFAUT_M[seance] != null;
   $('troncon-label').hidden = !avecTroncon;
-  if (avecTroncon) troncon.value = String(TRONCON_DEFAUT_M[type]);
-  const aide = TYPES_SEANCE.find((t) => t.id === type)?.aide;
-  aideSeance.hidden = !aide;
-  aideSeance.textContent = aide ?? '';
+  if (avecTroncon) troncon.value = String(TRONCON_DEFAUT_M[seance]);
+  $('seance-aide').textContent = TYPES_SEANCE.find((t) => t.id === seance)?.aide ?? '';
 }
-choixSeance.addEventListener('change', majSeance);
-const hint = $<HTMLElement>('hint');
+majSeance();
+
+// Boutons − / + et valeurs toutes prêtes de la distance et du D+.
+form.addEventListener('click', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pas], [data-valeur]');
+  if (!el) return;
+  if (el.dataset.pas) {
+    const [id, pas] = el.dataset.pas.split(':');
+    const input = $<HTMLInputElement>(id);
+    const v = Math.min(Number(input.max), Math.max(Number(input.min), (Number(input.value) || 0) + Number(pas)));
+    input.value = String(Math.round(v * 10) / 10);
+  } else {
+    const cible = el.closest<HTMLElement>('[data-cible]')!.dataset.cible!;
+    $<HTMLInputElement>(cible).value = el.dataset.valeur!;
+  }
+  majPuces();
+});
+function majPuces() {
+  for (const groupe of form.querySelectorAll<HTMLElement>('[data-cible]')) {
+    const v = Number($<HTMLInputElement>(groupe.dataset.cible!).value);
+    for (const b of groupe.querySelectorAll<HTMLElement>('.puce')) b.setAttribute('aria-pressed', String(Number(b.dataset.valeur) === v));
+  }
+}
+distanceInput.addEventListener('input', majPuces);
+dplusInput.addEventListener('input', majPuces);
+majPuces();
+const dplusVise = () => valeurRadio('dplus-mode') === 'vise';
+function majDplus() { $('dplus-bloc').hidden = !dplusVise(); }
+form.querySelectorAll('input[name="dplus-mode"]').forEach((r) => r.addEventListener('change', majDplus));
+majDplus();
+
+/* ---------- Carte ---------- */
 
 const map = L.map('map', { zoomControl: true });
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -59,30 +111,34 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 let depart: L.LatLng | null = null;
 // Cercle plutôt que L.marker : l'icône par défaut de Leaflet pointe vers des
 // images que le bundler ne résout pas.
-const marqueur = L.circleMarker([0, 0], { radius: 8, color: '#ffffff', weight: 3, fillColor: '#15803d', fillOpacity: 1 });
-const arrivee = L.circleMarker([0, 0], { radius: 6, color: '#15803d', weight: 3, fillColor: '#ffffff', fillOpacity: 1, interactive: false })
+const marqueur = L.circleMarker([0, 0], { radius: 9, color: '#ffffff', weight: 3, fillColor: couleur('--vert'), fillOpacity: 1 });
+const arrivee = L.circleMarker([0, 0], { radius: 6, color: couleur('--vert'), weight: 3, fillColor: '#ffffff', fillOpacity: 1, interactive: false })
   .bindTooltip('Arrivée');
+const curseurCarte = L.circleMarker([0, 0], { radius: 6, color: couleur('--encre'), weight: 2, fillColor: '#ffffff', fillOpacity: 1, interactive: false });
 const calques = L.layerGroup().addTo(map);
 // Zone choisie, à part : elle reste affichée entre deux calculs.
 const calqueZone = L.layerGroup().addTo(map);
 let dessin = false;
-// D+ laissé vide : boucle de la distance demandée, D+ libre.
+// D+ laissé libre : boucle de la distance demandée, D+ libre.
 let dernierLibre = false;
 let pointsZone: L.LatLng[] = [];
 let lignes: L.Polyline[] = [];
-let boucles: Loop[] = [];
+let boucles: BoucleAffichee[] = [];
+let choisie = 0;
 
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 let idReq = 0;
 
-function setStatus(texte: string, warn = false) {
+function setStatus(texte: string, alerte = false) {
   statusEl.textContent = texte;
-  statusEl.className = warn ? 'warn' : '';
+  statusEl.hidden = !texte;
+  statusEl.classList.toggle('alerte', alerte);
 }
 
 function placerDepart(ll: L.LatLng) {
   depart = ll;
   marqueur.setLatLng(ll).addTo(map);
+  hint.textContent = `${ll.lat.toFixed(4).replace('.', ',')} N · ${ll.lng.toFixed(4).replace('.', ',')} E. Touche la carte pour le déplacer.`;
   majZone();
 }
 
@@ -92,21 +148,25 @@ map.on('click', (e: L.LeafletMouseEvent) => {
   if (dessin) {
     pointsZone.push(e.latlng);
     majZone();
-  } else placerDepart(e.latlng);
+  } else if (app.dataset.vue === 'reglages') placerDepart(e.latlng);
 });
 
+/* ---------- Terrain et zone ---------- */
 
-// Zone choisie : la boucle y reste le plus possible.
-const zoneActive = () => zoneType.value !== 'aucune';
+const zoneType = () => valeurRadio('zone-type');
+const zoneActive = () => zoneType() !== 'aucune';
 
 function majFormulaire() {
-  $('rayon-label').hidden = zoneType.value !== 'cercle';
-  dessinBox.hidden = zoneType.value !== 'polygone';
+  $('rayon-label').hidden = zoneType() !== 'cercle';
+  $('dessin-box').hidden = zoneType() !== 'polygone';
   $('allers-retours-label').hidden = !zoneActive();
+  $('zone-note').hidden = !zoneActive();
   // La boucle en zone a sa propre construction : pas de type de séance.
   $('seance-box').hidden = zoneActive();
-  aideSeance.hidden = zoneActive() || !choixSeance.value;
-  if (zoneType.value !== 'polygone') arreterDessin();
+  if (zoneType() !== 'polygone') arreterDessin();
+  const terrain = form.querySelector<HTMLInputElement>('input[name="terrain"]:checked')!.nextElementSibling!.textContent;
+  const zone = { aucune: 'aucune zone', cercle: `cercle de ${rayonInput.value.replace('.', ',')} km`, polygone: 'zone dessinée' }[zoneType()];
+  $('resume-options').textContent = `${terrain} · ${zone}`;
   majZone();
 }
 
@@ -114,39 +174,39 @@ function arreterDessin() {
   dessin = false;
   boutonDessiner.setAttribute('aria-pressed', 'false');
   boutonDessiner.textContent = pointsZone.length ? 'Redessiner' : 'Dessiner la zone';
-  hint.textContent = 'Touche la carte pour placer le départ.';
+  consigne.hidden = true;
+  panel.classList.remove('dessin');
 }
 
 function majZone() {
   calqueZone.clearLayers();
-  const style = { color: '#15803d', weight: 2, dashArray: '6 6', fillOpacity: 0.06, interactive: false };
-  if (zoneType.value === 'cercle') {
+  const style = { color: couleur('--vert'), weight: 2, dashArray: '6 6', fillOpacity: 0.08, interactive: false };
+  if (zoneType() === 'cercle') {
     if (depart) L.circle(depart, { ...style, radius: Number(rayonInput.value) * 1000 }).addTo(calqueZone);
-  } else if (pointsZone.length >= 2) {
+  } else if (zoneType() === 'polygone' && pointsZone.length >= 2) {
     L.polygon(pointsZone, style).addTo(calqueZone);
   }
   for (const p of dessin ? pointsZone : []) {
-    L.circleMarker(p, { radius: 4, color: '#15803d', weight: 2, fillOpacity: 1, interactive: false }).addTo(calqueZone);
+    L.circleMarker(p, { radius: 6, color: couleur('--vert'), weight: 3, fillColor: '#ffffff', fillOpacity: 1, interactive: false }).addTo(calqueZone);
   }
 }
 
-zoneType.addEventListener('change', majFormulaire);
-rayonInput.addEventListener('input', majZone);
+form.querySelectorAll('input[name="zone-type"], input[name="terrain"]').forEach((r) => r.addEventListener('change', majFormulaire));
+rayonInput.addEventListener('input', majFormulaire);
 boutonDessiner.addEventListener('click', () => {
   if (dessin) return arreterDessin();
   dessin = true;
   pointsZone = [];
   // Les boucles précédentes sont cliquables et intercepteraient les touches.
-  calques.clearLayers();
-  arrivee.remove();
-  results.replaceChildren();
-  profileBox.hidden = true;
+  effacerBoucles();
   boutonDessiner.setAttribute('aria-pressed', 'true');
   boutonDessiner.textContent = 'Terminer le dessin';
-  hint.textContent = 'Touche la carte pour ajouter les coins de la zone, puis « Terminer le dessin ».';
+  consigne.textContent = 'Touche la carte pour ajouter les coins de la zone, puis « Terminer le dessin ».';
+  consigne.hidden = false;
+  // Téléphone : panneau bas, réduit aux boutons du dessin, la carte libre au-dessus.
+  panel.classList.add('dessin');
+  requestAnimationFrame(() => { panel.scrollTop = $('dessin-box').offsetTop - 12; });
   majZone();
-  // Sur téléphone, la carte est au-dessus du formulaire : la ramener à l'écran.
-  map.getContainer().scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $<HTMLButtonElement>('effacer').addEventListener('click', () => {
   pointsZone = [];
@@ -155,22 +215,51 @@ $<HTMLButtonElement>('effacer').addEventListener('click', () => {
 });
 majFormulaire();
 
+/* ---------- Vues du panneau ---------- */
+
+type Vue = 'reglages' | 'boucles' | 'detail';
+function setVue(v: Vue) {
+  app.dataset.vue = v;
+  for (const id of ['reglages', 'boucles', 'detail'] as const) $(`vue-${id}`).hidden = id !== v;
+  panel.classList.remove('replie');
+  panel.scrollTop = 0;
+  placerProfil();
+  profilBox.hidden = v !== 'detail';
+  // Le message du calcul concerne la liste, pas une boucle ouverte.
+  if (v === 'detail') statusEl.hidden = true;
+  else statusEl.hidden = !statusEl.textContent;
+  if (v !== 'detail') curseurCarte.remove();
+  // La carte change de taille quand le profil apparaît sous elle.
+  requestAnimationFrame(() => map.invalidateSize());
+}
+/** Profil sous la carte sur ordinateur, dans le détail sur téléphone. */
+function placerProfil() {
+  const cible = ordinateur.matches ? app : $('profil-mobile');
+  if (profilBox.parentElement !== cible) cible.appendChild(profilBox);
+}
+ordinateur.addEventListener('change', () => {
+  placerProfil();
+  if (app.dataset.vue === 'detail') dessinerProfil(boucles[choisie]);
+  requestAnimationFrame(() => map.invalidateSize());
+});
+$('poignee').addEventListener('click', () => panel.classList.toggle('replie'));
+$('retour-reglages').addEventListener('click', () => setVue('reglages'));
+$('retour-boucles').addEventListener('click', () => { setVue('boucles'); cadrer(); });
+
+/* ---------- Données ---------- */
+
 worker.onmessage = (ev: MessageEvent) => {
   const msg = ev.data;
   if (msg.type === 'loaded') {
     regions = (msg.manifest as Manifest).regions;
     for (const r of regions) {
       const [x0, y0, x1, y1] = r.bbox;
-      L.rectangle([[y0, x0], [y1, x1]], { color: '#57534e', weight: 1, fill: false, dashArray: '4 6', interactive: false }).addTo(map);
-      const opt = document.createElement('option');
-      opt.value = r.id;
-      opt.textContent = r.name;
-      selectRegion.appendChild(opt);
+      L.rectangle([[y0, x0], [y1, x1]], { color: couleur('--gris'), weight: 1, fill: false, dashArray: '4 6', interactive: false }).addTo(map);
+      selectRegion.add(new Option(r.name, r.id));
     }
     choisirRegion(regions[0].id);
     // Un lien ?depart= l'emporte ; sinon, la position du coureur.
     if (!departDepuisAdresse()) allerAMaPosition(false);
-    $('zone-info').textContent = `Régions couvertes : ${regions.map((r) => r.name).join(', ')}`;
     $('credits').innerHTML =
       `Réseau : ${regions[0].reseau}.<br>Altitude : ${regions[0].mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
     go.disabled = false;
@@ -181,6 +270,7 @@ worker.onmessage = (ev: MessageEvent) => {
     go.disabled = false;
   } else if (msg.type === 'error') {
     setStatus(msg.message, true);
+    results.replaceChildren();
     go.disabled = false;
   }
 };
@@ -202,7 +292,7 @@ function departDepuisAdresse(): boolean {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
   const r = regionDe(lat, lon);
   if (r) selectRegion.value = r.id;
-  map.setView([lat, lon], 13);
+  map.setView([lat, lon], 14);
   placerDepart(L.latLng(lat, lon));
   return true;
 }
@@ -230,7 +320,7 @@ function allerAMaPosition(demande: boolean) {
       selectRegion.value = r.id;
       map.setView([lat, lon], 14);
       placerDepart(L.latLng(lat, lon));
-      setStatus('Départ placé à ta position.');
+      setStatus(demande ? 'Départ placé à ta position.' : '');
     },
     () => {
       if (demande) setStatus('Position indisponible : autorise la localisation pour ce site, ou touche la carte.', true);
@@ -238,7 +328,10 @@ function allerAMaPosition(demande: boolean) {
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
   );
 }
-$<HTMLButtonElement>('ma-position').addEventListener('click', () => allerAMaPosition(true));
+$<HTMLButtonElement>('ma-position').addEventListener('click', () => {
+  if (app.dataset.vue !== 'reglages') setVue('reglages');
+  allerAMaPosition(true);
+});
 
 function choisirRegion(id: string) {
   const r = regions.find((x) => x.id === id);
@@ -250,135 +343,185 @@ function choisirRegion(id: string) {
 }
 setStatus('Chargement du réseau de chemins…');
 
+/* ---------- Calcul ---------- */
+
 form.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (!depart) return;
-  const distanceKm = Number($<HTMLInputElement>('distance').value);
-  const brutDplus = $<HTMLInputElement>('dplus').value.trim();
-  const dplusM = brutDplus === '' ? undefined : Number(brutDplus);
+  if (!depart || go.disabled) return;
+  const distanceKm = Number(distanceInput.value);
+  if (!(distanceKm > 0)) return setStatus('Choisis une distance.', true);
+  const dplusM = dplusVise() && dplusInput.value.trim() !== '' ? Number(dplusInput.value) : undefined;
   dernierLibre = dplusM === undefined;
-  const terrain = $<HTMLSelectElement>('terrain').value as Terrain;
-  essayer.hidden = true;
+  const terrain = valeurRadio('terrain') as Terrain;
+  const s = zoneActive() ? null : seanceChoisie();
+  $('resume-demande').textContent = `${zoneActive() ? 'Zone' : TYPES_SEANCE.find((t) => t.id === seance)!.libelle} · ${km(distanceKm * 1000).replace(',0', '')} km`;
+  $('resume-detail').textContent = dplusM === undefined ? 'D+ libre' : `${dplusM} m de D+ visés`;
+  let message: Record<string, unknown>;
   if (zoneActive()) {
     let zone: Zone;
-    if (zoneType.value === 'cercle') {
+    if (zoneType() === 'cercle') {
       zone = { kind: 'cercle', rayonM: Number(rayonInput.value) * 1000 };
     } else {
-      if (pointsZone.length < 3) return setStatus('Dessine d\u2019abord la zone : au moins 3 points sur la carte.', true);
+      if (pointsZone.length < 3) {
+        $<HTMLDetailsElement>('options').open = true;
+        return setStatus('Dessine d’abord la zone : au moins 3 points sur la carte.', true);
+      }
       arreterDessin();
       zone = { kind: 'polygone', points: pointsZone.map((p) => [p.lat, p.lng]) };
     }
-    go.disabled = true;
-    setStatus('Calcul des boucles dans la zone…');
     const req: ZoneRequest = {
       lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, zone, allersRetours: allersRetours.checked,
     };
-    worker.postMessage({ type: 'generateZone', id: ++idReq, req });
-    return;
+    message = { type: 'generateZone', id: ++idReq, req };
+  } else {
+    message = { type: 'generate', id: ++idReq, req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, ...(s ? { seance: s } : {}) } };
   }
   go.disabled = true;
-  setStatus('Calcul des boucles…');
-  worker.postMessage({
-    type: 'generate',
-    id: ++idReq,
-    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, ...(seanceChoisie() ? { seance: seanceChoisie()! } : {}) },
-  });
+  essayer.hidden = true;
+  effacerBoucles();
+  setVue('boucles');
+  setStatus(zoneActive() ? 'Calcul des boucles dans la zone…' : 'Calcul des boucles…');
+  const sq = document.createElement('li');
+  sq.className = 'boucle squelette';
+  sq.setAttribute('aria-hidden', 'true');
+  sq.innerHTML = '<i style="width:40%"></i><i></i><i style="height:44px"></i><i style="width:70%"></i>';
+  results.replaceChildren(sq);
+  worker.postMessage(message);
 });
 
-/** Écart signé en mètres, arrondi à 10 m : « +120 m », « −40 m ». */
-const metres = (m: number) => `${m >= 0 ? '+' : '−'}${Math.round(Math.abs(m) / 10) * 10} m`;
+/* ---------- Boucles proposées ---------- */
 
-function pct(x: number) {
-  return `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(0)} %`;
+const ICONES: Record<string, string> = {
+  fractionne: '<path d="M3 19h18"/><path d="M6 19V11M10 19V6M14 19V11M18 19V6"/>',
+  seuil: '<path d="M3 16h18"/><path d="M14 10l4 6"/><path d="M3 8h8"/>',
+  cotes: '<path d="M3 19l6-9 4 5 3-4 5 8z"/>',
+  gpx: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+};
+const icone = (nom: string) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONES[nom] ?? ''}</svg>`;
+const part = (m: number, l: BoucleAffichee) => Math.round((m / l.distanceM) * 100);
+const majuscule = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function effacerBoucles() {
+  calques.clearLayers();
+  arrivee.remove();
+  curseurCarte.remove();
+  lignes = [];
+  boucles = [];
+  results.replaceChildren();
+  points.replaceChildren();
+}
+
+/** Étiquettes d'une boucle, dans l'ordre d'importance. */
+function etiquettes(l: BoucleAffichee, avecParts = true): string {
+  const t: string[] = [];
+  if (avecParts && l.eauM >= 0.05 * l.distanceM) t.push(`<span class="tag eau">${part(l.eauM, l)} % au bord de l'eau</span>`);
+  if (avecParts && l.parcM >= 0.05 * l.distanceM) t.push(`<span class="tag parc">${part(l.parcM, l)} % dans les parcs</span>`);
+  if (l.itinM >= 0.05 * l.distanceM) t.push(`<span class="tag parc">${part(l.itinM, l)} % sur sentier balisé</span>`);
+  if (l.partZone != null) t.push(`<span class="tag">${Math.round(l.partZone * 100)} % dans la zone</span>`);
+  if (l.ecartArriveeM >= 50) t.push(`<span class="tag">Arrivée à ${Math.round(l.ecartArriveeM / 10) * 10} m</span>`);
+  t.push(`<span class="tag ${l.distanceOk ? '' : 'alerte'}">Distance ${metres(l.distanceM - l.distanceM / (1 + l.ecartDistance))}</span>`);
+  if (l.allerRetour >= 0.01) t.push(`<span class="tag">Aller-retour ${(l.allerRetour * 100).toFixed(0)} %</span>`);
+  if (l.rapideM >= 200) t.push(`<span class="tag alerte">${km(l.rapideM)} km le long d'une voie rapide</span>`);
+  if (l.grandesRoutesM >= 100) t.push(`<span class="tag ${l.grandesRoutesM >= 1000 ? 'alerte' : ''}">${km(l.grandesRoutesM)} km sur grande route</span>`);
+  return `<div class="etiquettes">${t.join('')}</div>`;
+}
+
+function chiffres(l: BoucleAffichee, classe = ''): string {
+  const ecartDplus = !dernierLibre && Math.abs(l.ecartDplus) > 0.15;
+  return `<div class="chiffres ${classe}">
+    <div class="chiffre"><b>${km(l.distanceM)}<small> km</small></b><span>Distance</span></div>
+    <div class="chiffre ${ecartDplus ? 'alerte' : ''}"><b>${Math.round(l.dplusM)}<small> m</small></b><span>${dernierLibre ? 'D+' : `D+ ${pct(l.ecartDplus)}`}</span></div>
+    <div class="chiffre"><b>${part(l.sansVoitureM, l)}<small> %</small></b><span>Sans voitures</span></div>
+  </div>`;
 }
 
 function afficher(res: Reponse) {
-  calques.clearLayers();
-  arrivee.remove();
-  results.replaceChildren();
-  lignes = [];
+  effacerBoucles();
   boucles = res.loops;
-  profileBox.hidden = true;
   const ch = res.chargement;
-  const duree = ((res.stats.ms + (ch?.ms ?? 0)) / 1000).toFixed(1);
-  setStatus(`${res.message} (${duree} s${ch ? `, ${ch.tuiles} tuile${ch.tuiles > 1 ? 's' : ''}` : ''})`, !res.ok);
+  const duree = ((res.stats.ms + (ch?.ms ?? 0)) / 1000).toFixed(1).replace('.', ',');
+  // Alerte : demande impossible, départ décalé, ou objectif de séance manqué.
+  const alerte = !res.ok || !!res.depart || /Aucun tronçon|Pas de vraie côte/.test(res.message);
+  setStatus(`${res.message} (${duree} s)`, alerte);
   // Demande impossible : un D+ réalisable, à essayer en un clic.
   essayer.hidden = !res.suggestion;
   if (res.suggestion) {
     const dp = res.suggestion.dplusM;
-    essayer.textContent = `Essayer ${dp} m de D+ (${res.suggestion.sens === 'reduire' ? 'moins' : 'plus'} de dénivelé)`;
+    essayer.textContent = `Essayer ${dp} m de D+`;
     essayer.onclick = () => {
-      $<HTMLInputElement>('dplus').value = String(dp);
+      form.querySelector<HTMLInputElement>('input[name="dplus-mode"][value="vise"]')!.checked = true;
+      majDplus();
+      dplusInput.value = String(dp);
+      majPuces();
       form.requestSubmit();
     };
   }
   if (res.loops.length === 0) return;
 
+  const n = res.loops.length;
   res.loops.forEach((loop, i) => {
-    const couleur = COULEURS[i % COULEURS.length];
-    const ligne = L.polyline(
-      loop.coords.map(([la, lo]) => [la, lo] as [number, number]),
-      { color: couleur, weight: 4, opacity: 0.55 },
-    ).addTo(calques);
-    ligne.on('click', () => selectionner(i));
+    const ligne = L.polyline(loop.coords.map(([la, lo]) => [la, lo] as [number, number]), { weight: 4 }).addTo(calques);
+    ligne.on('click', () => { selectionner(i); results.children[i]?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' }); });
     lignes.push(ligne);
 
     const li = document.createElement('li');
-    li.className = 'loop';
-    li.setAttribute('role', 'option');
+    li.className = 'boucle';
+    li.setAttribute('aria-selected', 'false');
     li.innerHTML = `
-      <span class="swatch" style="background:${couleur}"></span>
-      <span class="main">${(loop.distanceM / 1000).toFixed(1)} km · ${Math.round(loop.dplusM)} m D+</span>
-      <span class="gaps">
-        ${loop.seance?.resume ? `<span class="seance">${loop.seance.resume}</span> · ` : ''}<span class="${loop.distanceOk ? 'ok' : 'ko'}">dist. ${metres(loop.distanceM - loop.distanceM / (1 + loop.ecartDistance))}</span> ·
-        ${dernierLibre ? '' : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·`}
-        aller-retour ${(loop.allerRetour * 100).toFixed(0)} % · ${Math.round((loop.sansVoitureM / loop.distanceM) * 100)} % sans voitures${
-          loop.ecartArriveeM >= 50 ? ` · arrivée à ${Math.round(loop.ecartArriveeM / 10) * 10} m du départ` : ''
-        }${
-          loop.parcM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.parcM / loop.distanceM) * 100)} % dans les parcs` : ''
-        }${
-          loop.eauM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.eauM / loop.distanceM) * 100)} % au bord de l'eau` : ''
-        }${
-          loop.itinM >= 0.05 * loop.distanceM ? ` · ${Math.round((loop.itinM / loop.distanceM) * 100)} % sur sentier balisé` : ''
-        }${
-          loop.partZone != null ? ` · ${Math.round(loop.partZone * 100)} % dans la zone` : ''
-        }${
-          loop.rapideM >= 200 ? ` · <span class="ko">${(loop.rapideM / 1000).toFixed(1).replace('.', ',')} km le long d'une voie rapide</span>` : ''
-        }${
-          loop.grandesRoutesM >= 100
-            ? ` · <span class="${loop.grandesRoutesM >= 1000 ? 'ko' : ''}">${(loop.grandesRoutesM / 1000).toFixed(1).replace('.', ',')} km sur grande route</span>`
-            : ''
-        }
-      </span>`;
-    const bouton = document.createElement('button');
-    bouton.className = 'gpx';
-    bouton.type = 'button';
-    bouton.textContent = 'GPX';
-    bouton.addEventListener('click', (e) => {
-      e.stopPropagation();
-      telecharger(loop, i);
-    });
-    li.appendChild(bouton);
+      <div class="boucle-tete"><span class="pastille"></span>Boucle ${i + 1} sur ${n}${
+        loop.seance ? `<span class="badge">${TYPES_SEANCE.find((t) => t.id === seance)!.libelle}</span>` : ''}</div>
+      ${chiffres(loop)}
+      ${loop.seance?.resume ? `<div class="encadre">${icone(seance)}<span><strong>${majuscule(loop.seance.resume)}</strong></span></div>` : ''}
+      ${etiquettes(loop)}
+      <div class="rangee">
+        <button type="button" class="bouton principal voir">Voir la boucle</button>
+        <button type="button" class="bouton secondaire gpx">${icone('gpx')}GPX</button>
+      </div>`;
+    li.querySelector('.voir')!.addEventListener('click', (e) => { e.stopPropagation(); ouvrirDetail(i); });
+    li.querySelector('.gpx')!.addEventListener('click', (e) => { e.stopPropagation(); telecharger(loop, i); });
     li.addEventListener('click', () => selectionner(i));
     results.appendChild(li);
+    points.appendChild(document.createElement('span'));
   });
-  const cadre = L.featureGroup(lignes);
   if (res.depart && depart) {
     // Départ déplacé faute de boucle depuis le point demandé : le relier au
     // point demandé pour que le coureur voie où aller.
     const nouveau = L.latLng(res.depart.lat, res.depart.lon);
-    L.polyline([depart, nouveau], { color: '#ea580c', weight: 2, dashArray: '6 6', interactive: false }).addTo(calques).addTo(cadre);
-    L.circleMarker(nouveau, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#ea580c', fillOpacity: 1 })
-      .bindTooltip(`Départ décalé de ${(res.depart.decalageM / 1000).toFixed(1).replace('.', ',')} km`)
-      .addTo(calques).addTo(cadre);
+    L.polyline([depart, nouveau], { color: couleur('--orange'), weight: 2, dashArray: '6 6', interactive: false }).addTo(calques);
+    L.circleMarker(nouveau, { radius: 9, color: '#ffffff', weight: 3, fillColor: couleur('--orange'), fillOpacity: 1 })
+      .bindTooltip(`Départ conseillé, à ${km(res.depart.decalageM)} km`, { permanent: true, direction: 'right' })
+      .addTo(calques);
   }
-  map.fitBounds(cadre.getBounds(), { padding: [20, 20] });
   selectionner(0);
+  cadrer();
+  // Téléphone : la carte de boucle centrée dans le défilement devient la boucle choisie.
+  const obs = new IntersectionObserver((entrees) => {
+    for (const en of entrees) if (en.isIntersecting && !ordinateur.matches) selectionner([...results.children].indexOf(en.target));
+  }, { root: results, threshold: 0.6 });
+  for (const li of results.children) obs.observe(li);
+}
+
+/** Cadre la carte sur les boucles, sans les cacher sous le panneau du téléphone. */
+function cadrer(seule = false) {
+  if (!lignes.length) return;
+  const cadre = L.featureGroup(seule ? [lignes[choisie]] : lignes);
+  if (depart) L.marker(depart).addTo(cadre);
+  const bas = ordinateur.matches ? 20 : panel.offsetHeight + 16;
+  map.fitBounds(cadre.getBounds(), { paddingTopLeft: [20, 72], paddingBottomRight: [20, bas] });
 }
 
 function selectionner(i: number) {
-  lignes.forEach((l, k) => l.setStyle({ opacity: k === i ? 0.95 : 0.35, weight: k === i ? 5 : 3 }));
+  if (i < 0 || !boucles[i]) return;
+  choisie = i;
+  const vert = couleur('--vert');
+  const gris = couleur('--autre-boucle');
+  lignes.forEach((l, k) => l.setStyle(k === i ? { color: vert, opacity: 1, weight: 5 } : { color: gris, opacity: 0.75, weight: 3 }));
   lignes[i].bringToFront();
+  [...results.children].forEach((li, k) => {
+    li.setAttribute('aria-selected', String(k === i));
+    li.querySelector<HTMLElement>('.pastille')?.style.setProperty('background', k === i ? vert : gris);
+  });
+  [...points.children].forEach((p, k) => p.classList.toggle('actif', k === i));
   // Arrivée distincte du départ : marquée sur la carte.
   arrivee.remove();
   const loop = boucles[i];
@@ -386,28 +529,140 @@ function selectionner(i: number) {
     const [la, lo] = loop.coords[loop.coords.length - 1];
     arrivee.setLatLng([la, lo]).addTo(map);
   }
-  [...results.children].forEach((li, k) => li.setAttribute('aria-selected', String(k === i)));
-  dessinerProfil(boucles[i]);
 }
 
-function dessinerProfil(loop: Loop) {
-  const W = 320;
-  const H = 120;
-  const z = loop.coords.map((c) => c[2]);
-  const zmin = Math.min(...z);
-  const zmax = Math.max(...z);
-  const dz = Math.max(zmax - zmin, 20);
-  const D = loop.cumul[loop.cumul.length - 1] || 1;
-  const pts = loop.cumul.map((d, k) => `${((d / D) * W).toFixed(1)},${(H - 6 - ((z[k] - zmin) / dz) * (H - 16)).toFixed(1)}`);
-  profile.innerHTML =
-    `<polygon class="area" points="0,${H} ${pts.join(' ')} ${W},${H}"/>` +
-    `<polyline class="lineP" points="${pts.join(' ')}"/>`;
-  $('profile-legend').textContent =
-    `${(D / 1000).toFixed(1)} km · altitude ${Math.round(zmin)} à ${Math.round(zmax)} m`;
-  profileBox.hidden = false;
+/* ---------- Détail ---------- */
+
+function ouvrirDetail(i: number) {
+  selectionner(i);
+  const l = boucles[i];
+  const s = TYPES_SEANCE.find((t) => t.id === seance)!;
+  $('detail-titre').innerHTML = `<strong>${km(l.distanceM)} km · ${Math.round(l.dplusM)} m D+</strong><span class="aide">Boucle ${i + 1} sur ${boucles.length}${
+    l.seance ? ` · ${s.libelle}` : ''}</span>`;
+  const barre = (nom: string, m: number, c: string) =>
+    `<div class="barre"><div><span>${nom}</span><strong>${part(m, l)} %</strong></div><div class="piste"><i style="width:${part(m, l)}%;background:var(${c})"></i></div></div>`;
+  $('detail').innerHTML = `
+    ${chiffres(l, 'trait')}
+    <p class="aide">${l.ecartArriveeM >= 50 ? `Arrivée à ${Math.round(l.ecartArriveeM / 10) * 10} m du départ.` : 'Arrivée au départ.'}</p>
+    ${l.seance?.resume ? `<div class="seance-detail"><span class="icone">${icone(seance)}</span><div><small>TA SÉANCE</small><b>${majuscule(l.seance.resume)}</b><p>${s.aide}</p></div></div>` : ''}
+    <div class="section"><h3>Le parcours</h3>${barre("Au bord de l'eau", l.eauM, '--eau')}${barre('Dans les parcs', l.parcM, '--parc')}${etiquettes(l, false)}</div>`;
+  const actions = $('detail-actions');
+  actions.innerHTML = `<button type="button" class="bouton principal">${icone('gpx')}Exporter le GPX</button><button type="button" class="bouton secondaire">Autres boucles</button>`;
+  actions.children[0].addEventListener('click', () => telecharger(l, i));
+  actions.children[1].addEventListener('click', () => { setVue('boucles'); cadrer(); });
+  setVue('detail');
+  dessinerProfil(l);
+  requestAnimationFrame(() => cadrer(true));
 }
 
-function telecharger(loop: Loop, i: number) {
+/* ---------- Profil ---------- */
+
+const PENTES: [number, string, string][] = [
+  [5, '#e4ebc9', '< 5 %'], [10, '#f2c14e', '5-10 %'], [15, '#e8863a', '10-15 %'], [Infinity, '#c23b1e', '> 15 %'],
+];
+const VOIES: Record<SegmentVoie['voie'], [string, string]> = {
+  'sans-voitures': ['#6fae5b', 'Sans voitures'], route: ['#4b5158', 'Route'], chemin: ['#c9a66b', 'Chemin'],
+};
+const couleurPente = (p: number) => PENTES.find(([s]) => Math.abs(p) < s)![1];
+
+/** Altitude à la distance d (m), par interpolation sur le tracé. */
+function altitudeA(l: BoucleAffichee, d: number): [number, number] {
+  const c = l.cumul;
+  let lo = 0, hi = c.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (c[m] <= d) lo = m; else hi = m; }
+  const t = c[hi] > c[lo] ? Math.min(1, Math.max(0, (d - c[lo]) / (c[hi] - c[lo]))) : 0;
+  return [l.coords[lo][2] + (l.coords[hi][2] - l.coords[lo][2]) * t, t < 0.5 ? lo : hi];
+}
+
+function dessinerProfil(l: BoucleAffichee) {
+  if (!l) return;
+  const D = l.cumul[l.cumul.length - 1] || 1;
+  const z = l.coords.map((c) => c[2]);
+  const zmin = Math.min(...z), zmax = Math.max(...z);
+  // Pente par tranche de 100 m.
+  const tranches: [number, number, number][] = [];
+  for (let d = 0; d < D; d += 100) {
+    const f = Math.min(D, d + 100);
+    tranches.push([d, f, f > d ? ((altitudeA(l, f)[0] - altitudeA(l, d)[0]) / (f - d)) * 100 : 0]);
+  }
+  const monte = Math.max(0, ...tranches.map((t) => t[2]));
+  const descend = Math.max(0, ...tranches.map((t) => -t[2]));
+  // Axe : 3 à 4 lignes, au moins 30 m de hauteur pour qu'une boucle plate
+  // reste plate à l'œil.
+  const etendue = Math.max(zmax - zmin, 30);
+  const pas = [5, 10, 20, 25, 50, 100, 200, 250, 500].find((p) => etendue / p <= 4) ?? 1000;
+  const zbas = Math.floor(zmin / pas) * pas;
+  const zhaut = Math.max(Math.ceil(zmax / pas) * pas, zbas + Math.ceil(30 / pas) * pas);
+  const W = Math.max(300, Math.round(profilBox.clientWidth || panel.clientWidth - 40));
+  const H = ordinateur.matches ? 130 : 120, X0 = 46;
+  const X = (d: number) => X0 + (d / D) * (W - X0);
+  const Y = (alt: number) => H - ((alt - zbas) / (zhaut - zbas)) * (H - 8);
+  const f1 = (v: number) => v.toFixed(1);
+  let svg = '';
+  for (let a = zbas + pas; a <= zhaut; a += pas) svg += `<line class="grille" x1="${X0}" x2="${W}" y1="${f1(Y(a))}" y2="${f1(Y(a))}"/><text x="${X0 - 6}" y="${f1(Y(a) + 4)}" text-anchor="end">${a} m</text>`;
+  for (const [d0, d1, p] of tranches) {
+    const pts = [[d0, altitudeA(l, d0)[0]]];
+    for (let k = 0; k < l.cumul.length; k++) if (l.cumul[k] > d0 && l.cumul[k] < d1) pts.push([l.cumul[k], z[k]]);
+    pts.push([d1, altitudeA(l, d1)[0]]);
+    svg += `<polygon fill="${couleurPente(p)}" points="${f1(X(d0))},${H} ${pts.map(([d, a]) => `${f1(X(d))},${f1(Y(a))}`).join(' ')} ${f1(X(d1))},${H}"/>`;
+  }
+  svg += `<polyline class="ligne" points="${l.cumul.map((d, k) => `${f1(X(d))},${f1(Y(z[k]))}`).join(' ')}"/>`;
+  const voies = l.voies ?? [];
+  const echelle = voies.length ? D / voies[voies.length - 1].finM : 1;
+  for (const v of voies) svg += `<rect x="${f1(X(v.debutM * echelle))}" y="${H + 8}" width="${f1(Math.max(0.6, ((v.finM - v.debutM) * echelle / D) * (W - X0)))}" height="8" fill="${VOIES[v.voie][0]}"/>`;
+  const pasKm = D > 30000 ? 5 : D > 12000 ? 2 : 1;
+  for (let k = 0; k * 1000 <= D; k += pasKm) svg += `<text x="${f1(X(k * 1000))}" y="${H + 32}" text-anchor="${k === 0 ? 'start' : (k + pasKm) * 1000 > D ? 'end' : 'middle'}">${k}${(k + pasKm) * 1000 > D ? ' km' : ''}</text>`;
+  svg += `<line class="curseur" id="curseur" x1="0" x2="0" y1="0" y2="${H}" visibility="hidden"/><circle id="curseur-point" r="4.5" fill="#ffffff" stroke="currentColor" stroke-width="2" visibility="hidden"/>`;
+
+  const stat = (nom: string, v: string) => `<span class="stat"><em>${nom}</em> <strong>${v}</strong></span>`;
+  const stats = [stat('Montée', `${Math.round(l.dplusM)} m`), stat('Point haut', `${Math.round(zmax)} m`), stat('Point bas', `${Math.round(zmin)} m`),
+    stat('Plus raide ↑', `${Math.round(monte)} %`), stat('Plus raide ↓', `${Math.round(descend)} %`)];
+  const voiesPresentes = (Object.keys(VOIES) as SegmentVoie['voie'][]).filter((v) => voies.some((s) => s.voie === v));
+  profilBox.innerHTML = `
+    <div class="profil-tete"><h3>Profil</h3>${stats.join('')}</div>
+    <div class="profil-graphe"><svg viewBox="0 0 ${W} ${H + 40}" role="img" aria-label="Profil : altitude de ${Math.round(zmin)} à ${Math.round(zmax)} m sur ${km(l.distanceM)} km">${svg}</svg><div class="bulle" hidden></div></div>
+    <div class="legende-profil">
+      <span><em>Pente</em>${PENTES.map(([, c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('')}</span>
+      ${voiesPresentes.length ? `<span><em>Voie</em>${voiesPresentes.map((v) => `<span><i style="background:${VOIES[v][0]};height:6px"></i>${VOIES[v][1]}</span>`).join('')}</span>` : ''}
+    </div>
+    <div class="stats-profil">${stats.join('')}</div>`;
+
+  // Survol (ou toucher) : altitude et pente au point, repéré aussi sur la carte.
+  const el = profilBox.querySelector<SVGSVGElement>('svg')!;
+  const bulle = profilBox.querySelector<HTMLElement>('.bulle')!;
+  const ligne = el.querySelector('#curseur')!;
+  const rond = el.querySelector('#curseur-point')!;
+  const montrer = (ev: PointerEvent) => {
+    const r = el.getBoundingClientRect();
+    const x = ((ev.clientX - r.left) / r.width) * W;
+    if (x < X0) return;
+    const d = Math.min(D, ((x - X0) / (W - X0)) * D);
+    const [alt, k] = altitudeA(l, d);
+    const p = tranches[Math.min(tranches.length - 1, Math.floor(d / 100))][2];
+    for (const n of [ligne, rond]) n.setAttribute('visibility', 'visible');
+    ligne.setAttribute('x1', f1(X(d))); ligne.setAttribute('x2', f1(X(d)));
+    rond.setAttribute('cx', f1(X(d))); rond.setAttribute('cy', f1(Y(alt)));
+    bulle.hidden = false;
+    bulle.innerHTML = `<strong>km ${km(d)}</strong><br>${Math.round(alt)} m · pente ${Math.round(Math.abs(p))} %`;
+    const gauche = (X(d) / W) * r.width;
+    bulle.style.left = `${gauche + 10 + 140 > r.width ? gauche - 150 : gauche + 10}px`;
+    curseurCarte.setLatLng([l.coords[k][0], l.coords[k][1]]).addTo(map);
+  };
+  el.addEventListener('pointermove', montrer);
+  el.addEventListener('pointerdown', montrer);
+  el.addEventListener('pointerleave', () => {
+    for (const n of [ligne, rond]) n.setAttribute('visibility', 'hidden');
+    bulle.hidden = true;
+    curseurCarte.remove();
+  });
+}
+let attente = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(attente);
+  attente = window.setTimeout(() => { if (app.dataset.vue === 'detail') dessinerProfil(boucles[choisie]); }, 150);
+});
+
+function telecharger(loop: BoucleAffichee, i: number) {
   const nom = `Boucle D+ ${(loop.distanceM / 1000).toFixed(1)} km ${Math.round(loop.dplusM)} m (${i + 1})`;
   const blob = new Blob([toGpx(loop, nom)], { type: 'application/gpx+xml' });
   const a = document.createElement('a');

@@ -3,82 +3,144 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#14532d" />
+    <meta name="theme-color" content="#0b6e38" />
     <title>Boucle D+</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="app">
-      <div id="map" aria-label="Carte : touche un point pour choisir le départ"></div>
+    <div id="app" data-vue="reglages">
+      <div id="carte-zone">
+        <div id="map" aria-label="Carte : touche un point pour choisir le départ"></div>
+        <p id="consigne" class="consigne" hidden></p>
+        <button id="ma-position" type="button" class="rond flottant" aria-label="Ma position" title="Ma position">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        </button>
+      </div>
+
+      <section id="profil-box" class="profil" hidden aria-label="Profil de la boucle"></section>
+
       <aside id="panel">
-        <header>
-          <h1>Boucle D+</h1>
-          <p class="sub" id="zone-info">Chargement des données…</p>
-        </header>
-        <form id="form">
-          <label>Région
-            <select id="region"></select>
-          </label>
-          <div class="row ligne-depart">
-            <p class="hint" id="hint">Touche la carte pour placer le départ.</p>
-            <button id="ma-position" type="button" class="secondaire">Ma position</button>
-          </div>
-          <div class="row">
-            <label>Distance (km)
-              <input id="distance" type="number" inputmode="decimal" min="1" max="60" step="0.5" value="12" required />
-            </label>
-            <label>D+ (m) facultatif
-              <input id="dplus" type="number" inputmode="numeric" min="0" max="4000" step="10" value="400" placeholder="libre" />
-            </label>
-          </div>
-          <fieldset id="zone-box">
-            <legend>Zone</legend>
-            <div class="row">
-              <label>Forme
-                <select id="zone-type">
-                  <option value="aucune">Aucune</option>
-                  <option value="cercle">Cercle autour du départ</option>
-                  <option value="polygone">Zone dessinée</option>
-                </select>
-              </label>
-              <label id="rayon-label">Rayon (km)
-                <input id="rayon" type="number" inputmode="decimal" min="0.3" max="15" step="0.1" value="2" />
+        <button id="poignee" type="button" class="poignee" aria-label="Réduire ou agrandir le panneau"><span></span></button>
+        <p id="status" class="etat" role="status" hidden></p>
+
+        <div id="vue-reglages" class="vue">
+          <header class="entete">
+            <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 14c0-5 4-9 9-9 3 0 5 2 5 4s-2 3-4 3-4 1-4 4 2 4 5 4"/><circle cx="18" cy="20" r="1.5"/></svg></span>
+            <h1>Boucle D+</h1>
+            <span class="note">Arrivée à moins de 400 m</span>
+          </header>
+          <form id="form" novalidate>
+            <div class="bloc">
+              <div class="etiquette-ligne">
+                <span class="etiquette">Départ</span>
+                <label class="region">Région <select id="region"></select></label>
+              </div>
+              <p class="aide" id="hint">Touche la carte pour placer le départ.</p>
+            </div>
+
+            <div class="bloc">
+              <label class="etiquette" for="distance">Distance</label>
+              <div class="reglage-grand">
+                <button type="button" class="rond contour" data-pas="distance:-0.5" aria-label="Moins 0,5 km">−</button>
+                <span class="valeur-grande"><input id="distance" type="number" inputmode="decimal" min="1" max="60" step="0.5" value="8" required /><span class="unite">km</span></span>
+                <button type="button" class="rond contour" data-pas="distance:0.5" aria-label="Plus 0,5 km">+</button>
+              </div>
+              <div class="puces egales" data-cible="distance">
+                <button type="button" class="puce" data-valeur="5">5</button>
+                <button type="button" class="puce" data-valeur="8">8</button>
+                <button type="button" class="puce" data-valeur="10">10</button>
+                <button type="button" class="puce" data-valeur="15">15</button>
+                <button type="button" class="puce" data-valeur="21.1">21,1</button>
+              </div>
+            </div>
+
+            <div class="bloc">
+              <span class="etiquette">D+ (facultatif)</span>
+              <div class="segment" role="radiogroup" aria-label="D+">
+                <label><input type="radio" name="dplus-mode" value="libre" checked /><span>Libre</span></label>
+                <label><input type="radio" name="dplus-mode" value="vise" /><span>Visé</span></label>
+              </div>
+              <div id="dplus-bloc" class="sous-bloc" hidden>
+                <div class="reglage-grand">
+                  <button type="button" class="rond contour" data-pas="dplus:-50" aria-label="Moins 50 m">−</button>
+                  <span class="valeur-grande"><input id="dplus" type="number" inputmode="numeric" min="0" max="4000" step="10" value="400" aria-label="D+ visé en mètres" /><span class="unite">m</span></span>
+                  <button type="button" class="rond contour" data-pas="dplus:50" aria-label="Plus 50 m">+</button>
+                </div>
+                <div class="puces egales" data-cible="dplus">
+                  <button type="button" class="puce" data-valeur="100">100</button>
+                  <button type="button" class="puce" data-valeur="200">200</button>
+                  <button type="button" class="puce" data-valeur="400">400</button>
+                  <button type="button" class="puce" data-valeur="600">600</button>
+                  <button type="button" class="puce" data-valeur="1000">1 000</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="bloc" id="seance-box">
+              <span class="etiquette">Type de séance</span>
+              <div class="puces" id="seances" role="radiogroup" aria-label="Type de séance"></div>
+              <p class="aide" id="seance-aide"></p>
+              <label id="troncon-label" class="ligne-reglage" hidden>
+                <span>Tronçon continu</span>
+                <span class="champ-unite"><input id="troncon" type="number" inputmode="numeric" min="200" max="10000" step="100" value="1000" /><span>m</span></span>
               </label>
             </div>
-            <div class="row" id="dessin-box" hidden>
-              <button id="dessiner" type="button" class="secondaire">Dessiner la zone</button>
-              <button id="effacer" type="button" class="secondaire">Effacer</button>
-            </div>
-            <label class="case" id="allers-retours-label"><input id="allers-retours" type="checkbox" /> Autoriser les allers-retours (côte répétée)</label>
-          </fieldset>
-          <label>Terrain
-            <select id="terrain">
-              <option value="mixte">Mixte</option>
-              <option value="sentiers">Sentiers</option>
-              <option value="route">Route</option>
-            </select>
-          </label>
-          <div class="row" id="seance-box">
-            <label>Type de séance
-              <select id="seance">
-                <option value="">Aucune (boucle libre)</option>
-              </select>
-            </label>
-            <label id="troncon-label" hidden>Tronçon continu (m)
-              <input id="troncon" type="number" inputmode="numeric" min="200" max="10000" step="100" value="1000" />
-            </label>
+
+            <details id="options" class="bloc options">
+              <summary><span>Terrain et zone</span><span id="resume-options" class="aide"></span></summary>
+              <div class="options-corps">
+                <span class="etiquette">Terrain</span>
+                <div class="segment" role="radiogroup" aria-label="Terrain">
+                  <label><input type="radio" name="terrain" value="mixte" checked /><span>Mixte</span></label>
+                  <label><input type="radio" name="terrain" value="sentiers" /><span>Sentiers</span></label>
+                  <label><input type="radio" name="terrain" value="route" /><span>Route</span></label>
+                </div>
+                <span class="etiquette">Zone</span>
+                <div class="segment" role="radiogroup" aria-label="Zone">
+                  <label><input type="radio" name="zone-type" value="aucune" checked /><span>Aucune</span></label>
+                  <label><input type="radio" name="zone-type" value="cercle" /><span>Cercle</span></label>
+                  <label><input type="radio" name="zone-type" value="polygone" /><span>Dessinée</span></label>
+                </div>
+                <label id="rayon-label" class="ligne-reglage">
+                  <span>Rayon autour du départ</span>
+                  <span class="champ-unite"><input id="rayon" type="number" inputmode="decimal" min="0.3" max="15" step="0.1" value="2" /><span>km</span></span>
+                </label>
+                <div class="rangee" id="dessin-box" hidden>
+                  <button id="dessiner" type="button" class="bouton secondaire">Dessiner la zone</button>
+                  <button id="effacer" type="button" class="bouton secondaire">Effacer</button>
+                </div>
+                <label class="case" id="allers-retours-label"><input id="allers-retours" type="checkbox" /> Autoriser les allers-retours (côte répétée)</label>
+                <p class="aide" id="zone-note">Dans une zone, le type de séance n'est pas proposé : la boucle vise le D+ demandé.</p>
+              </div>
+            </details>
+
+            <button id="go" class="bouton principal" type="submit" disabled>Générer les boucles</button>
+          </form>
+        </div>
+
+        <div id="vue-boucles" class="vue" hidden>
+          <div class="entete-vue">
+            <button id="retour-reglages" type="button" class="rond contour" aria-label="Retour aux réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <div class="titre-vue"><strong id="resume-demande"></strong><span id="resume-detail" class="aide"></span></div>
           </div>
-          <p class="sub" id="seance-aide" hidden></p>
-          <button id="go" type="submit" disabled>Générer les boucles</button>
-        </form>
-        <p id="status" role="status"></p>
-        <button id="essayer" type="button" hidden></button>
-        <ol id="results"></ol>
-        <section id="profile-box" hidden>
-          <h2>Profil</h2>
-          <svg id="profile" viewBox="0 0 320 120" preserveAspectRatio="none" role="img" aria-label="Profil altimétrique"></svg>
-          <p class="sub" id="profile-legend"></p>
-        </section>
-        <footer class="sub" id="credits"></footer>
+          <button id="essayer" type="button" class="bouton principal" hidden></button>
+          <ol id="results" aria-label="Boucles proposées"></ol>
+          <div id="points" class="points" aria-hidden="true"></div>
+        </div>
+
+        <div id="vue-detail" class="vue" hidden>
+          <div class="entete-vue">
+            <button id="retour-boucles" type="button" class="rond contour" aria-label="Retour aux boucles"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <div class="titre-vue" id="detail-titre"></div>
+          </div>
+          <div id="detail"></div>
+          <div id="profil-mobile"></div>
+          <div id="detail-actions" class="rangee"></div>
+        </div>
+
+        <footer class="credits" id="credits"></footer>
       </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>
