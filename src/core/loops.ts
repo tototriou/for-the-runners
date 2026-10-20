@@ -15,7 +15,7 @@
 
 import { CLASSES, distanceToNode, nearestNode, toXY, TYPE_SENTIER, type Graph, type Terrain } from './graph';
 import { Router } from './router';
-import { avertissementSeance, coutsTraversees, mesurerSeance, REGLAGES, resumeSeance, termeSeance, type MesuresSeance, type ReglagesSeance, type Seance } from './seances';
+import { avertissementSeance, seanceActive, coutsTraversees, mesurerSeance, REGLAGES, resumeSeance, termeSeance, type MesuresSeance, type ReglagesSeance, type Seance } from './seances';
 
 export const TOL_DISTANCE = 0.05;
 /**
@@ -710,7 +710,7 @@ export class LoopGenerator {
     this.travail = 0;
     this.budget = BUDGET_TRAVAIL;
     this.arriveeM = Math.max(0, req.arriveeM ?? ARRIVEE_M);
-    this.seance = req.seance ?? null;
+    this.seance = seanceActive(req.seance);
     this.reglages = this.seance ? REGLAGES[this.seance.type] : null;
     const vide = (message: string, startNode = -1): LoopResponse => ({
       ok: false, loops: [], message, startNode,

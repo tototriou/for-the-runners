@@ -294,7 +294,8 @@ describe('arrivée à distance du départ', () => {
 describe('types de séance', () => {
   const g = grille(30, 100);
   const req = { lat: g.lat[15 * 30 + 15], lon: g.lon[15 * 30 + 15], distanceKm: 4, terrain: 'mixte' as const, seed: 5 };
-  const ensembles = (r: ReturnType<LoopGenerator['generate']>) => r.loops.map((l) => [...l.edges].sort((a, b) => a - b).join(',')).sort();
+  // Ordre des boucles compris : la n°1 doit être la même.
+  const ensembles = (r: ReturnType<LoopGenerator['generate']>) => r.loops.map((l) => [...l.edges].sort((a, b) => a - b).join(','));
 
   it('sans séance, aucune mesure de séance ; footing et sortie longue : mêmes boucles que sans séance', () => {
     const sans = new LoopGenerator(g).generate(req);

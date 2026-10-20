@@ -209,6 +209,14 @@ function noteCote(m: MesuresSeance) {
 }
 
 /**
+ * Séance qui modifie le calcul, ou null : footing et sortie longue sont la
+ * boucle libre à l'identique (même tri par D+ croissant quand le D+ est libre).
+ */
+export function seanceActive(s: Seance | undefined): Seance | null {
+  return s && s.type !== 'footing' && s.type !== 'sortie-longue' ? s : null;
+}
+
+/**
  * Terme ajouté à la clé du choix final (plus bas = mieux), en points de
  * score : un point vaut à peu près un point de part au bord de l'eau × 2.
  */
