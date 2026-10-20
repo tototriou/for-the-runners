@@ -171,11 +171,12 @@ function majFormulaire() {
 }
 
 function arreterDessin() {
+  const enCours = dessin;
   dessin = false;
   boutonDessiner.setAttribute('aria-pressed', 'false');
   boutonDessiner.textContent = pointsZone.length ? 'Redessiner' : 'Dessiner la zone';
   consigne.hidden = true;
-  panel.classList.remove('dessin');
+  if (enCours && !ordinateur.matches) setEtat('moyen');
 }
 
 function majZone() {
@@ -203,9 +204,11 @@ boutonDessiner.addEventListener('click', () => {
   boutonDessiner.textContent = 'Terminer le dessin';
   consigne.textContent = 'Touche la carte pour ajouter les coins de la zone, puis « Terminer le dessin ».';
   consigne.hidden = false;
-  // Téléphone : panneau bas, réduit aux boutons du dessin, la carte libre au-dessus.
-  panel.classList.add('dessin');
-  requestAnimationFrame(() => { panel.scrollTop = $('dessin-box').offsetTop - 12; });
+  // Téléphone : panneau réduit aux boutons du dessin, la carte libre au-dessus.
+  if (!ordinateur.matches) {
+    setEtat('reduit', 118);
+    requestAnimationFrame(() => { panel.scrollTop = $('dessin-box').offsetTop - 30; });
+  }
   majZone();
 });
 $<HTMLButtonElement>('effacer').addEventListener('click', () => {
@@ -221,8 +224,8 @@ type Vue = 'reglages' | 'boucles' | 'detail';
 function setVue(v: Vue) {
   app.dataset.vue = v;
   for (const id of ['reglages', 'boucles', 'detail'] as const) $(`vue-${id}`).hidden = id !== v;
-  panel.classList.remove('replie');
   panel.scrollTop = 0;
+  if (!ordinateur.matches) setEtat('moyen');
   placerProfil();
   profilBox.hidden = v !== 'detail';
   // Le message du calcul concerne la liste, pas une boucle ouverte.
@@ -242,9 +245,55 @@ ordinateur.addEventListener('change', () => {
   if (app.dataset.vue === 'detail') dessinerProfil(boucles[choisie]);
   requestAnimationFrame(() => map.invalidateSize());
 });
-$('poignee').addEventListener('click', () => panel.classList.toggle('replie'));
+/* ---------- Panneau du bas (téléphone) ----------
+   Trois hauteurs : réduit (la poignée et le titre), moyen (la carte visible
+   au-dessus), plein. On le fait glisser par la poignée ; un toucher bascule
+   entre réduit et moyen. */
+type Etat = 'reduit' | 'moyen' | 'plein';
+const ETATS: Etat[] = ['reduit', 'moyen', 'plein'];
+function hauteurEtat(e: Etat): number {
+  const H = app.clientHeight;
+  if (e === 'reduit') return 92;
+  if (e === 'plein') return H - 64;
+  return Math.round(H * (app.dataset.vue === 'detail' ? 0.5 : 0.64));
+}
+function setEtat(e: Etat, px = hauteurEtat(e)) {
+  panel.dataset.etat = e;
+  panel.style.setProperty('--h', `${px}px`);
+  if (e === 'reduit') panel.scrollTop = 0;
+}
+const basculer = () => setEtat(panel.dataset.etat === 'reduit' ? 'moyen' : 'reduit');
+const poignee = $('poignee');
+let glisse: { y: number; h: number; bouge: boolean } | null = null;
+poignee.addEventListener('pointerdown', (e) => {
+  glisse = { y: e.clientY, h: panel.getBoundingClientRect().height, bouge: false };
+  poignee.setPointerCapture(e.pointerId);
+  panel.classList.add('glisse');
+});
+poignee.addEventListener('pointermove', (e) => {
+  if (!glisse) return;
+  const dy = e.clientY - glisse.y;
+  if (Math.abs(dy) > 6) glisse.bouge = true;
+  const h = Math.min(hauteurEtat('plein'), Math.max(hauteurEtat('reduit'), glisse.h - dy));
+  panel.style.setProperty('--h', `${h}px`);
+});
+const lacher = () => {
+  if (!glisse) return;
+  panel.classList.remove('glisse');
+  if (!glisse.bouge) basculer();
+  else {
+    const h = panel.getBoundingClientRect().height;
+    setEtat(ETATS.reduce((a, b) => (Math.abs(hauteurEtat(b) - h) < Math.abs(hauteurEtat(a) - h) ? b : a)));
+  }
+  glisse = null;
+};
+poignee.addEventListener('pointerup', lacher);
+poignee.addEventListener('pointercancel', lacher);
+// Clavier (Entrée, Espace) : pas d'événement de pointeur.
+poignee.addEventListener('click', (e) => { if (e.detail === 0) basculer(); });
+if (!ordinateur.matches) setEtat('moyen');
 $('retour-reglages').addEventListener('click', () => setVue('reglages'));
-$('retour-boucles').addEventListener('click', () => { setVue('boucles'); cadrer(); });
+$('retour-boucles').addEventListener('click', () => { setVue('boucles'); selectionner(choisie); cadrer(); });
 
 /* ---------- Données ---------- */
 
@@ -506,7 +555,8 @@ function cadrer(seule = false) {
   if (!lignes.length) return;
   const cadre = L.featureGroup(seule ? [lignes[choisie]] : lignes);
   if (depart) L.marker(depart).addTo(cadre);
-  const bas = ordinateur.matches ? 20 : panel.offsetHeight + 16;
+  const bas = ordinateur.matches ? 20
+    : (app.dataset.vue === 'boucles' ? panel.offsetHeight : hauteurEtat((panel.dataset.etat as Etat) ?? 'moyen')) + 16;
   map.fitBounds(cadre.getBounds(), { paddingTopLeft: [20, 72], paddingBottomRight: [20, bas] });
 }
 
@@ -549,8 +599,10 @@ function ouvrirDetail(i: number) {
   const actions = $('detail-actions');
   actions.innerHTML = `<button type="button" class="bouton principal">${icone('gpx')}Exporter le GPX</button><button type="button" class="bouton secondaire">Autres boucles</button>`;
   actions.children[0].addEventListener('click', () => telecharger(l, i));
-  actions.children[1].addEventListener('click', () => { setVue('boucles'); cadrer(); });
+  actions.children[1].addEventListener('click', () => { setVue('boucles'); selectionner(choisie); cadrer(); });
   setVue('detail');
+  // Dans le détail, seule la boucle ouverte reste tracée.
+  lignes.forEach((ln, k) => { if (k !== i) ln.setStyle({ opacity: 0 }); });
   dessinerProfil(l);
   requestAnimationFrame(() => cadrer(true));
 }
@@ -659,7 +711,10 @@ function dessinerProfil(l: BoucleAffichee) {
 let attente = 0;
 window.addEventListener('resize', () => {
   clearTimeout(attente);
-  attente = window.setTimeout(() => { if (app.dataset.vue === 'detail') dessinerProfil(boucles[choisie]); }, 150);
+  attente = window.setTimeout(() => {
+    if (!ordinateur.matches) setEtat((panel.dataset.etat as Etat) ?? 'moyen');
+    if (app.dataset.vue === 'detail') dessinerProfil(boucles[choisie]);
+  }, 150);
 });
 
 function telecharger(loop: BoucleAffichee, i: number) {

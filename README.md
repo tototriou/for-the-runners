@@ -27,7 +27,8 @@ englobants, débordant un peu sur les régions voisines). Résultats du banc de 
    bouton GPX télécharge la boucle pour une montre.
 
 **Interface.** Sur téléphone, la carte occupe l'écran et un panneau monte du
-bas (la poignée le réduit) ; sur ordinateur, la colonne est à droite et le
+bas, à trois hauteurs (réduit, moyen, plein) : on le fait glisser par la
+poignée, un toucher le replie ; les boucles proposées flottent sur la carte ; sur ordinateur, la colonne est à droite et le
 profil s'affiche en large sous la carte. Le profil est coloré par pente
 (par tranches de 100 m : moins de 5 %, 5-10 %, 10-15 %, plus de 15 %), avec
 les altitudes, un bandeau du type de voie (sans voitures, route, chemin) et
