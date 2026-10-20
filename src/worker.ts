@@ -5,6 +5,7 @@ import type { Graph } from './core/graph';
 import { ZoneGenerator, rayonZoneM, type ZoneRequest } from './core/zone';
 import { LoopGenerator, type LoopRequest, type LoopResponse } from './core/loops';
 import { TileStore, type Manifest, type TileDoc } from './core/tiles';
+import { voiesBoucle } from './core/voies';
 
 let base = '';
 let store: TileStore | null = null;
@@ -38,6 +39,7 @@ async function generer(req: LoopRequest): Promise<LoopResponse & { chargement?: 
   if (!gen || gen.graph !== r.graph) gen = { graph: r.graph, g: new LoopGenerator(r.graph) };
   const ms = performance.now() - t0;
   const res = gen.g.generate(req);
+  for (const l of res.loops) Object.assign(l, { voies: voiesBoucle(r.graph, l.edges) });
   return { ...res, chargement: { region: r.region.name, tuiles: r.tiles.length, ms } };
 }
 
@@ -51,7 +53,9 @@ async function genererZone(req: ZoneRequest) {
   }
   if (!genZone || genZone.graph !== r.graph) genZone = { graph: r.graph, g: new ZoneGenerator(r.graph) };
   const ms = performance.now() - t0;
-  return { ...genZone.g.generate(req), chargement: { region: r.region.name, tuiles: r.tiles.length, ms } };
+  const res = genZone.g.generate(req);
+  for (const l of res.loops) Object.assign(l, { voies: voiesBoucle(r.graph, l.edges) });
+  return { ...res, chargement: { region: r.region.name, tuiles: r.tiles.length, ms } };
 }
 
 self.onmessage = async (ev: MessageEvent) => {

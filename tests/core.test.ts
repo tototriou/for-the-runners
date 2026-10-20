@@ -4,6 +4,7 @@ import { ARRIVEE_M, couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, 
 import { toGpx } from '../src/core/gpx';
 import { Router } from '../src/core/router';
 import { mesurerSeance } from '../src/core/seances';
+import { voiesBoucle } from '../src/core/voies';
 import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
 
@@ -325,6 +326,25 @@ describe('types de séance', () => {
     expect(m.traversees).toBe(0);
     expect(m.tronconM).toBeLessThanOrEqual(l.distanceM);
     expect(m.dplusKm).toBeCloseTo(l.dplusM / (l.distanceM / 1000), 6);
+  });
+});
+
+describe('types de voie le long de la boucle', () => {
+  it('segments contigus, fusionnés, couvrant toute la boucle', async () => {
+    const store = chargerStore();
+    const r = (await store.graphFor(45.8992, 6.1294, 8))!;
+    const l = new LoopGenerator(r.graph).generate({ lat: 45.8992, lon: 6.1294, distanceKm: 8, terrain: 'mixte', seed: 7 }).loops[0];
+    const v = voiesBoucle(r.graph, l.edges);
+    expect(v[0].debutM).toBe(0);
+    for (let i = 1; i < v.length; i++) {
+      expect(v[i].debutM).toBeCloseTo(v[i - 1].finM, 6);
+      expect(v[i].voie).not.toBe(v[i - 1].voie);
+    }
+    const total = l.edges.reduce((s, e) => s + r.graph.len[e], 0);
+    expect(v[v.length - 1].finM).toBeCloseTo(total, 3);
+    // Les voies sans voitures et chemins couvrent la distance sans voitures annoncée.
+    const libres = v.filter((x) => x.voie !== 'route').reduce((s, x) => s + x.finM - x.debutM, 0);
+    expect(libres).toBeGreaterThanOrEqual(l.sansVoitureM - 1);
   });
 });
 
