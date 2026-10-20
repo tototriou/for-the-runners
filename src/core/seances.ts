@@ -15,7 +15,7 @@ export type TypeSeance = 'footing' | 'sortie-longue' | 'fractionne' | 'seuil' | 
 
 export const TYPES_SEANCE: { id: TypeSeance; libelle: string; aide: string }[] = [
   { id: 'footing', libelle: 'Footing', aide: 'Une boucle agréable à la bonne distance : le calcul par défaut.' },
-  { id: 'sortie-longue', libelle: 'Sortie longue', aide: 'Le moins d’arrêts possible : peu de rues à traverser, de longues portions le long de l’eau ou des parcs.' },
+  { id: 'sortie-longue', libelle: 'Sortie longue', aide: 'Une boucle agréable sur une plus grande distance : le calcul par défaut, comme le footing.' },
   { id: 'fractionne', libelle: 'Fractionné', aide: 'Un tronçon plat et sans traversée, au moins aussi long que tes répétitions, pour les enchaîner.' },
   { id: 'seuil', libelle: 'Seuil / tempo', aide: 'Plusieurs kilomètres continus, plats et sans traversée, pour tenir l’allure.' },
   { id: 'cotes', libelle: 'Côtes', aide: 'Une montée de 150 à 400 m à 5-12 % sur la boucle, à répéter.' },
@@ -62,12 +62,13 @@ export interface ReglagesSeance {
 
 // Une rue traversée coûte l'équivalent de 150 m de chemin au tracé. Mesuré à
 // 0 / 60 / 150 / 300 m sur 7 départs (Strasbourg, Paris, Annecy) : 150 m
-// divise les traversées par 2 à 2,5 (sortie longue 6,6 → 2,8 par km,
-// fractionné 8,5 → 3,6), toutes les demandes tenues ; 300 m n'apporte plus rien.
+// divise les traversées par 2 à 2,5 (fractionné 8,5 → 3,6 par km), toutes
+// les demandes tenues ; 300 m n'apporte plus rien.
 const PT = 150;
 export const REGLAGES: Record<TypeSeance, ReglagesSeance> = {
+  // La distance fait la sortie longue : la boucle libre suffit.
   footing: {},
-  'sortie-longue': { partLignes: 0.35, prixTraverseeM: PT },
+  'sortie-longue': {},
   // Plat avant tout : relief évité, et une moitié de lignes droites, la forme
   // la plus sûre d'offrir une longue portion continue (canal, berge, allée).
   fractionne: { betas: [-2, -0.8, 0], partLignes: 0.5, prixTraverseeM: PT },
@@ -214,9 +215,8 @@ function noteCote(m: MesuresSeance) {
 export function termeSeance(s: Seance, m: MesuresSeance): number {
   switch (s.type) {
     case 'footing':
-      return 0;
     case 'sortie-longue':
-      return 0.3 * m.traversees;
+      return 0;
     case 'fractionne':
     case 'seuil': {
       const cible = s.tronconM ?? TRONCON_DEFAUT_M[s.type]!;
@@ -234,9 +234,8 @@ export function resumeSeance(s: Seance, m: MesuresSeance): string {
   const km = (v: number) => (v / 1000).toFixed(1).replace('.', ',');
   switch (s.type) {
     case 'footing':
-      return '';
     case 'sortie-longue':
-      return `${m.traversees.toFixed(1).replace('.', ',')} traversée${m.traversees >= 2 ? 's' : ''} de rue par km`;
+      return '';
     case 'fractionne':
     case 'seuil':
       return `tronçon continu de ${km(m.tronconM)} km (plat, sans traversée)`;

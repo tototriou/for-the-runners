@@ -296,15 +296,17 @@ describe('types de séance', () => {
   const req = { lat: g.lat[15 * 30 + 15], lon: g.lon[15 * 30 + 15], distanceKm: 4, terrain: 'mixte' as const, seed: 5 };
   const ensembles = (r: ReturnType<LoopGenerator['generate']>) => r.loops.map((l) => [...l.edges].sort((a, b) => a - b).join(',')).sort();
 
-  it('sans séance, aucune mesure de séance ; footing : mêmes boucles que sans séance', () => {
+  it('sans séance, aucune mesure de séance ; footing et sortie longue : mêmes boucles que sans séance', () => {
     const sans = new LoopGenerator(g).generate(req);
     expect(sans.loops.every((l) => l.seance === undefined)).toBe(true);
     const footing = new LoopGenerator(g).generate({ ...req, seance: { type: 'footing' } });
     expect(ensembles(footing)).toEqual(ensembles(sans));
+    const longue = new LoopGenerator(g).generate({ ...req, seance: { type: 'sortie-longue' } });
+    expect(ensembles(longue)).toEqual(ensembles(sans));
   });
 
   it('chaque séance donne des boucles valides, avec leurs mesures', () => {
-    for (const type of ['sortie-longue', 'fractionne', 'seuil', 'cotes', 'recuperation'] as const) {
+    for (const type of ['fractionne', 'seuil', 'cotes', 'recuperation'] as const) {
       const r = new LoopGenerator(g).generate({ ...req, seance: { type } });
       expect(r.ok).toBe(true);
       for (const l of r.loops) {

@@ -271,7 +271,6 @@ if (!jeuDemande || jeuDemande === 'seances') {
     ['Paris, canal Saint-Martin', 48.8710, 2.3650], ['Annecy centre', 45.8992, 6.1294],
   ];
   const types: [TypeSeance, number, (m: MesuresSeance) => string, (m: MesuresSeance) => number][] = [
-    ['sortie-longue', 16, (m) => `${m.traversees.toFixed(1)} traversées/km`, (m) => -m.traversees],
     ['fractionne', 8, (m) => `tronçon continu ${Math.round(m.tronconM)} m`, (m) => m.tronconM],
     ['seuil', 10, (m) => `tronçon continu ${Math.round(m.tronconM)} m`, (m) => m.tronconM],
     ['cotes', 8, (m) => (m.coteM > 0 ? `côte ${Math.round(m.coteM)} m à ${m.cotePente.toFixed(1)} %` : 'aucune côte'), (m) => (m.coteM > 0 ? m.cotePente * Math.min(1, m.coteM / 150) : 0)],

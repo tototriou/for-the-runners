@@ -78,8 +78,8 @@ impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
 **Type de séance.** Facultatif : sans choix, rien ne change. Avec un type
 de séance, la boucle s'adapte à l'entraînement :
 
-- **Footing** : la boucle libre, telle quelle.
-- **Sortie longue** : peu de traversées de rues, plus de lignes droites.
+- **Footing** et **Sortie longue** : la boucle libre, telle quelle ; c'est
+  la distance choisie qui fait la sortie longue.
 - **Fractionné** et **Seuil** : un tronçon continu, plat et sans traversée
   (1 000 m et 3 000 m par défaut, réglables) ; le D+ est évité.
 - **Côtes** : une côte franche, de 150 à 400 m à 5–12 %, plutôt que des
