@@ -3,6 +3,7 @@ import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
 import { ARRIVEE_M, couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
 import { toGpx } from '../src/core/gpx';
 import { Router } from '../src/core/router';
+import { mesurerSeance } from '../src/core/seances';
 import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
 
@@ -290,6 +291,40 @@ describe('arrivée à distance du départ', () => {
   });
 });
 
+describe('types de séance', () => {
+  const g = grille(30, 100);
+  const req = { lat: g.lat[15 * 30 + 15], lon: g.lon[15 * 30 + 15], distanceKm: 4, terrain: 'mixte' as const, seed: 5 };
+  const ensembles = (r: ReturnType<LoopGenerator['generate']>) => r.loops.map((l) => [...l.edges].sort((a, b) => a - b).join(',')).sort();
+
+  it('sans séance, aucune mesure de séance ; footing : mêmes boucles que sans séance', () => {
+    const sans = new LoopGenerator(g).generate(req);
+    expect(sans.loops.every((l) => l.seance === undefined)).toBe(true);
+    const footing = new LoopGenerator(g).generate({ ...req, seance: { type: 'footing' } });
+    expect(ensembles(footing)).toEqual(ensembles(sans));
+  });
+
+  it('chaque séance donne des boucles valides, avec leurs mesures', () => {
+    for (const type of ['sortie-longue', 'fractionne', 'seuil', 'cotes', 'recuperation'] as const) {
+      const r = new LoopGenerator(g).generate({ ...req, seance: { type } });
+      expect(r.ok).toBe(true);
+      for (const l of r.loops) {
+        verifierBoucle(g, l);
+        expect(l.seance).toBeDefined();
+        expect(l.seance!.tronconM).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  it('mesures : traversées, tronçon continu et côte', () => {
+    // Grille sans classe de voie : aucune rue ouverte aux voitures, donc aucune traversée.
+    const l = new LoopGenerator(g).generate({ ...req, seance: { type: 'cotes' } }).loops[0];
+    const m = mesurerSeance(g, l.edges, l.dirs);
+    expect(m.traversees).toBe(0);
+    expect(m.tronconM).toBeLessThanOrEqual(l.distanceM);
+    expect(m.dplusKm).toBeCloseTo(l.dplusM / (l.distanceM / 1000), 6);
+  });
+});
+
 describe('toGpx', () => {
   it('produit un GPX 1.1 avec un point par coordonnée', () => {
     const g = grille();
@@ -356,6 +391,18 @@ describe('données réelles (tuiles d\u2019Annecy)', () => {
     const r = new LoopGenerator(g).generate({ lat: 45.8992, lon: 6.1294, distanceKm: 10, dplusM: 300, terrain: 'mixte' });
     expect(r.ok).toBe(true);
     for (const l of r.loops) verifierBoucle(g, l);
+  });
+
+  it('séance de fractionné : traversées comptées sur le vrai réseau, tronçon continu mesuré', async () => {
+    const depart = { lat: 45.9010, lon: 6.1300, distanceKm: 6, terrain: 'mixte' as const, seed: 7 };
+    const g = (await store.graphFor(depart.lat, depart.lon, depart.distanceKm))!.graph;
+    const gen = new LoopGenerator(g);
+    const sans = gen.generate(depart).loops[0];
+    const avec = gen.generate({ ...depart, seance: { type: 'fractionne' } });
+    expect(avec.ok).toBe(true);
+    for (const l of avec.loops) verifierBoucle(g, l);
+    expect(mesurerSeance(g, sans.edges, sans.dirs).traversees).toBeGreaterThan(0);
+    expect(avec.loops[0].seance!.resume).toMatch(/tronçon continu/);
   });
 
   it('tour de parc : plus de distance dans les parcs, boucles valides', async () => {

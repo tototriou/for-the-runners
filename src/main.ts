@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import './style.css';
 import { toGpx } from './core/gpx';
 import type { Loop, LoopResponse } from './core/loops';
+import { TRONCON_DEFAUT_M, TYPES_SEANCE, type Seance, type TypeSeance } from './core/seances';
 import type { Terrain } from './core/graph';
 import type { Manifest, RegionMeta } from './core/tiles';
 import type { Zone, ZoneRequest } from './core/zone';
@@ -26,6 +27,27 @@ const rayonInput = $<HTMLInputElement>('rayon');
 const dessinBox = $<HTMLElement>('dessin-box');
 const boutonDessiner = $<HTMLButtonElement>('dessiner');
 const allersRetours = $<HTMLInputElement>('allers-retours');
+const choixSeance = $<HTMLSelectElement>('seance');
+const troncon = $<HTMLInputElement>('troncon');
+const aideSeance = $('seance-aide');
+for (const t of TYPES_SEANCE) choixSeance.add(new Option(t.libelle, t.id));
+/** Séance choisie, en plus du calcul par défaut (null : boucle libre). */
+function seanceChoisie(): Seance | null {
+  const type = choixSeance.value as TypeSeance | '';
+  if (!type) return null;
+  const v = Number(troncon.value);
+  return TRONCON_DEFAUT_M[type] != null && v > 0 ? { type, tronconM: v } : { type };
+}
+function majSeance() {
+  const type = choixSeance.value as TypeSeance | '';
+  const avecTroncon = type !== '' && TRONCON_DEFAUT_M[type] != null;
+  $('troncon-label').hidden = !avecTroncon;
+  if (avecTroncon) troncon.value = String(TRONCON_DEFAUT_M[type]);
+  const aide = TYPES_SEANCE.find((t) => t.id === type)?.aide;
+  aideSeance.hidden = !aide;
+  aideSeance.textContent = aide ?? '';
+}
+choixSeance.addEventListener('change', majSeance);
 const hint = $<HTMLElement>('hint');
 
 const map = L.map('map', { zoomControl: true });
@@ -81,6 +103,9 @@ function majFormulaire() {
   $('rayon-label').hidden = zoneType.value !== 'cercle';
   dessinBox.hidden = zoneType.value !== 'polygone';
   $('allers-retours-label').hidden = !zoneActive();
+  // La boucle en zone a sa propre construction : pas de type de séance.
+  $('seance-box').hidden = zoneActive();
+  aideSeance.hidden = zoneActive() || !choixSeance.value;
   if (zoneType.value !== 'polygone') arreterDessin();
   majZone();
 }
@@ -256,7 +281,7 @@ form.addEventListener('submit', (e) => {
   worker.postMessage({
     type: 'generate',
     id: ++idReq,
-    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain },
+    req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, ...(seanceChoisie() ? { seance: seanceChoisie()! } : {}) },
   });
 });
 
@@ -305,7 +330,7 @@ function afficher(res: Reponse) {
       <span class="swatch" style="background:${couleur}"></span>
       <span class="main">${(loop.distanceM / 1000).toFixed(1)} km · ${Math.round(loop.dplusM)} m D+</span>
       <span class="gaps">
-        <span class="${loop.distanceOk ? 'ok' : 'ko'}">dist. ${metres(loop.distanceM - loop.distanceM / (1 + loop.ecartDistance))}</span> ·
+        ${loop.seance?.resume ? `<span class="seance">${loop.seance.resume}</span> · ` : ''}<span class="${loop.distanceOk ? 'ok' : 'ko'}">dist. ${metres(loop.distanceM - loop.distanceM / (1 + loop.ecartDistance))}</span> ·
         ${dernierLibre ? '' : `<span class="${Math.abs(loop.ecartDplus) <= 0.15 ? 'ok' : 'ko'}">D+ ${pct(loop.ecartDplus)}</span> ·`}
         aller-retour ${(loop.allerRetour * 100).toFixed(0)} % · ${Math.round((loop.sansVoitureM / loop.distanceM) * 100)} % sans voitures${
           loop.ecartArriveeM >= 50 ? ` · arrivée à ${Math.round(loop.ecartArriveeM / 10) * 10} m du départ` : ''

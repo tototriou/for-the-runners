@@ -57,6 +57,17 @@
               <option value="route">Route</option>
             </select>
           </label>
+          <div class="row" id="seance-box">
+            <label>Type de séance
+              <select id="seance">
+                <option value="">Aucune (boucle libre)</option>
+              </select>
+            </label>
+            <label id="troncon-label" hidden>Tronçon continu (m)
+              <input id="troncon" type="number" inputmode="numeric" min="200" max="10000" step="100" value="1000" />
+            </label>
+          </div>
+          <p class="sub" id="seance-aide" hidden></p>
           <button id="go" type="submit" disabled>Générer les boucles</button>
         </form>
         <p id="status" role="status"></p>

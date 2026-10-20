@@ -75,6 +75,20 @@ ne la respecte depuis le point choisi, l'app essaie un départ à moins de
 impossible, elle le dit et propose un D+ réalisable à cette distance (bouton
 « Essayer N m de D+ »).
 
+**Type de séance.** Facultatif : sans choix, rien ne change. Avec un type
+de séance, la boucle s'adapte à l'entraînement :
+
+- **Footing** : la boucle libre, telle quelle.
+- **Sortie longue** : peu de traversées de rues, plus de lignes droites.
+- **Fractionné** et **Seuil** : un tronçon continu, plat et sans traversée
+  (1 000 m et 3 000 m par défaut, réglables) ; le D+ est évité.
+- **Côtes** : une côte franche, de 150 à 400 m à 5–12 %, plutôt que des
+  lacets.
+- **Récupération** : plat, sur chemins, sans voitures.
+
+Chaque boucle affiche ce qui compte pour la séance (tronçon continu, côte,
+traversées par km) et prévient quand le quartier ne le permet pas.
+
 **Zone.** Tu peux choisir une zone : un cercle autour du départ (rayon à
 choisir) ou une zone dessinée en touchant la carte (une forêt, un parc, un
 massif). La boucle reste le plus possible dedans : elle n'en sort que pour
@@ -177,6 +191,7 @@ base à changer).
 | `src/core/graph.ts` | Décodage du graphe, adjacence, index spatial |
 | `src/core/router.ts` | A* à coût paramétrable (relief, terrain, tronçons déjà pris) |
 | `src/core/loops.ts` | Générateur de boucles : candidates, ajustement du rayon, score, variantes, diversité |
+| `src/core/seances.ts` | Types de séance : réglages, mesures (traversées, tronçon continu, côte), terme de choix |
 | `src/core/zone.ts` | Boucles dans une zone : montées et descentes enchaînées vers le D+ visé |
 | `src/core/tiles.ts` | Choix des tuiles autour du départ, cache, fusion en un graphe |
 | `src/core/gpx.ts` | Export GPX 1.1 |

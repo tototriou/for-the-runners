@@ -15,6 +15,7 @@
 
 import { CLASSES, distanceToNode, nearestNode, toXY, TYPE_SENTIER, type Graph, type Terrain } from './graph';
 import { Router } from './router';
+import { avertissementSeance, coutsTraversees, mesurerSeance, REGLAGES, resumeSeance, termeSeance, type MesuresSeance, type ReglagesSeance, type Seance } from './seances';
 
 export const TOL_DISTANCE = 0.05;
 /**
@@ -53,6 +54,8 @@ export interface LoopRequest {
   arriveeM?: number;
   /** Tour de parc : permis (défaut, une candidate sur deux), imposé, ou exclu. */
   tourParc?: 'permis' | 'impose' | 'exclu';
+  /** Type de séance : en plus du calcul par défaut (absent : calcul inchangé). */
+  seance?: Seance;
 }
 
 export interface Loop {
@@ -86,6 +89,8 @@ export interface Loop {
   rapideM: number;
   /** Distance sur un itinéraire piéton balisé d'OpenStreetMap, en mètres. */
   itinM: number;
+  /** Séance demandée : ses mesures et une phrase pour la carte. */
+  seance?: MesuresSeance & { resume: string };
   score: number;
   dansTolerance: boolean;
   /** Tracé : [lat, lon, altitude] ; profil : distance cumulée (m) par point. */
@@ -154,6 +159,8 @@ interface Candidate {
   partRapide: number;
   /** Part de la distance sur un itinéraire piéton balisé. */
   partItin: number;
+  /** Mesures de la séance demandée (absentes sans séance). */
+  seance?: MesuresSeance;
   score: number;
 }
 
@@ -392,6 +399,15 @@ export class LoopGenerator {
 
   /** Distance tolérée entre l'arrivée et le départ de la demande en cours. */
   private arriveeM = 0;
+  /** Séance de la demande en cours et ses réglages (null : calcul par défaut). */
+  private seance: Seance | null = null;
+  private reglages: ReglagesSeance | null = null;
+
+  /** Clé du choix : celle par défaut, plus le terme de la séance quand il y en a une. */
+  private cle(c: Candidate, target: Cible) {
+    if (!this.seance || !c.seance) return cleChoix(c, estPlate(target));
+    return cleChoix(c, estPlate(target) && !this.reglages?.sansVirages) + termeSeance(this.seance, c.seance);
+  }
   /** Parcs du graphe (calculés à la première demande de tour de parc). */
   private parcs: Parc[] | null = null;
   /** Parcs dont les boucles de la demande en cours peuvent faire le tour. */
@@ -419,10 +435,16 @@ export class LoopGenerator {
   }
 
   private costs(beta: number, terrain: Terrain) {
-    const key = `${beta.toFixed(2)}|${terrain}`;
+    const prix = this.reglages?.prixTraverseeM ?? 0;
+    const key = `${beta.toFixed(2)}|${terrain}|${prix}`;
     let c = this.costCache.get(key);
     if (c) return c;
     c = coutsAretes(this.g, beta, terrain);
+    // Séance qui veut peu d'arrêts : chaque rue traversée se paie.
+    if (prix > 0) {
+      const extra = coutsTraversees(this.g, prix);
+      for (let e = 0; e < this.g.m; e++) c.cost[e] += extra[e];
+    }
     if (this.costCache.size > 40) this.costCache.clear();
     this.costCache.set(key, c);
     return c;
@@ -489,7 +511,7 @@ export class LoopGenerator {
     if (edges.length === 0) return null;
 
     const m = mesurer(g, edges, dirs);
-    return { p, edges, dirs, ...m, score: score(m, target) };
+    return { p, edges, dirs, ...m, score: score(m, target), ...(this.seance ? { seance: mesurerSeance(g, edges, dirs) } : {}) };
   }
 
   /**
@@ -601,10 +623,10 @@ export class LoopGenerator {
         theta: theta0 + i * ANGLE_OR,
         // Sortie plate : une part de « lignes droites », un seul point de
         // passage loin devant (le long d'un canal, d'un parc), retour par l'autre rive.
-        k: estPlate(target) && rand() < PART_LIGNES ? 1 : K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)),
-        beta: BETAS[i % BETAS.length],
+        k: estPlate(target) && rand() < (this.reglages?.partLignes ?? PART_LIGNES) ? 1 : K_MIN + Math.floor(rand() * (K_MAX - K_MIN + 1)),
+        beta: (this.reglages?.betas ?? BETAS)[i % (this.reglages?.betas ?? BETAS).length],
         radius: r0 * (0.85 + 0.3 * rand()),
-        mode: MODES[Math.floor(rand() * MODES.length)],
+        mode: (this.reglages?.modes ?? MODES)[Math.floor(rand() * (this.reglages?.modes ?? MODES).length)],
         vert: rand() < PART_VERTS,
         parc: -1,
       };
@@ -626,7 +648,7 @@ export class LoopGenerator {
     // Les tours supplémentaires ne servent que si rien n'est encore dans la tolérance.
     for (let tour = 0; tour < tours && cands.length > 0; tour++) {
       if (TRI_PARENTS_AGREMENT) {
-        cands.sort((x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x, estPlate(target)) - cleChoix(y, estPlate(target)));
+        cands.sort((x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || this.cle(x, target) - this.cle(y, target));
       } else cands.sort((x, y) => x.score - y.score);
       if (tour > 0 && cands.some((c) => dansTolerance(c, target))) break;
       const parents = cands.slice(0, N_PARENTS);
@@ -688,6 +710,8 @@ export class LoopGenerator {
     this.travail = 0;
     this.budget = BUDGET_TRAVAIL;
     this.arriveeM = Math.max(0, req.arriveeM ?? ARRIVEE_M);
+    this.seance = req.seance ?? null;
+    this.reglages = this.seance ? REGLAGES[this.seance.type] : null;
     const vide = (message: string, startNode = -1): LoopResponse => ({
       ok: false, loops: [], message, startNode,
       stats: { candidates: 0, routes: this.routes, travail: this.travail, ms: now() - t0 },
@@ -735,7 +759,7 @@ export class LoopGenerator {
     // dans la tolérance d'abord : le score peut classer devant elles une
     // boucle hors tolérance (+2 % / +18 % bat 4 % / 13 %), qui l'évinçait.
     const ordre = [...cands].sort(
-      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || cleChoix(x, estPlate(target)) - cleChoix(y, estPlate(target)),
+      (x, y) => Number(dansTolerance(y, target)) - Number(dansTolerance(x, target)) || this.cle(x, target) - this.cle(y, target),
     );
     const choisies: { c: Candidate; set: Set<number> }[] = [];
     for (const c of ordre) {
@@ -746,8 +770,14 @@ export class LoopGenerator {
       if (choisies.length === 5) break;
     }
     const loops = choisies.map(({ c }) => finaliser(g, c, target));
-    // D+ libre : du plus roulant au plus vallonné, pour choisir.
-    if (libre) loops.sort((a, b) => a.dplusM - b.dplusM);
+    if (this.seance) {
+      choisies.forEach(({ c }, k) => {
+        if (c.seance) loops[k].seance = { ...c.seance, resume: resumeSeance(this.seance!, c.seance) };
+      });
+    }
+    // D+ libre : du plus roulant au plus vallonné, pour choisir. Avec une
+    // séance, l'ordre du choix est gardé : la n°1 est la mieux adaptée.
+    if (libre && !this.seance) loops.sort((a, b) => a.dplusM - b.dplusM);
     const nOk = loops.filter((l) => l.dansTolerance).length;
     const stats = { candidates: cands.length, routes: this.routes, travail: this.travail, ms: now() - t0 };
 
@@ -768,7 +798,8 @@ export class LoopGenerator {
     const resume = (libre
       ? `${nOk} boucle${nOk > 1 ? 's' : ''} de ${req.distanceKm} km (${libelleTolDistance(target.d)}), de ${Math.min(...dplusOk)} à ${Math.max(...dplusOk)} m D+ : à toi de choisir.`
       : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length} proposée${loops.length > 1 ? 's' : ''}.`)
-      + (this.tourParc === 'impose' && this.parcsVises.length === 0 ? ' Aucun grand parc à portée : boucles sans tour de parc.' : '');
+      + (this.tourParc === 'impose' && this.parcsVises.length === 0 ? ' Aucun grand parc à portée : boucles sans tour de parc.' : '')
+      + (this.seance && loops[0]?.seance ? avertissementSeance(this.seance, loops[0].seance) : '');
     if (decale) {
       const dx = g.x[start] - g.x[demande];
       const dy = g.y[start] - g.y[demande];
