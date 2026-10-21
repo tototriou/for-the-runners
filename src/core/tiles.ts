@@ -72,6 +72,23 @@ export function tilesAround(m: Manifest, r: RegionMeta, lat: number, lon: number
   return out;
 }
 
+/**
+ * Centre et demi-diagonale (km) de l'emprise des tuiles. Le graphe est
+ * projeté autour de ce centre : il ne dépend que des tuiles, pas du départ
+ * qui les a demandées, et une même demande donne la même boucle quelle que
+ * soit la recherche précédente.
+ */
+export function empriseTuiles(m: Manifest, tiles: string[]): { center: [number, number]; radiusKm: number } {
+  const [dLat, dLon] = m.tileDeg;
+  const ty = tiles.map((t) => Number(t.split('_')[0]));
+  const tx = tiles.map((t) => Number(t.split('_')[1]));
+  const [la0, la1] = [Math.min(...ty) * dLat, (Math.max(...ty) + 1) * dLat];
+  const [lo0, lo1] = [Math.min(...tx) * dLon, (Math.max(...tx) + 1) * dLon];
+  const center: [number, number] = [(la0 + la1) / 2, (lo0 + lo1) / 2];
+  const kx = 111.32 * Math.cos((center[0] * Math.PI) / 180);
+  return { center, radiusKm: Math.hypot((lo1 - lo0) * kx, (la1 - la0) * 111.2) / 2 };
+}
+
 /** Fusionne des tuiles d'une même région en un graphe (nœuds recollés par identifiant). */
 export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
   const index = new Map<number, number>();
@@ -158,7 +175,7 @@ export class TileStore {
     if (this.dernier?.cle === cle) return { graph: this.dernier.graph, region, tiles, neuf: false };
     const docs = await Promise.all(tiles.map((t) => this.tuile(region.id, t)));
     const graph = mergeTiles(docs, {
-      zone: region.name, center: [lat, lon], radiusKm: rayonM / 1000,
+      zone: region.name, ...empriseTuiles(this.manifest, tiles),
       reseau: region.reseau, mnt: region.mnt, noeuds: 0, aretes: 0,
     });
     this.dernier = { cle, graph };

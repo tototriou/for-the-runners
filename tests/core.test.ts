@@ -380,6 +380,19 @@ describe('données réelles (tuiles d\u2019Annecy)', () => {
     expect(doublons / g.n).toBeLessThan(0.01);
   });
 
+  it('le graphe ne dépend que des tuiles, pas de la recherche précédente', async () => {
+    // Annecy centre puis Sévrier couvrent les mêmes tuiles à 10 km : le
+    // graphe réutilisé doit être celui qu'une recherche neuve depuis Sévrier construit.
+    const reutilise = chargerStore();
+    await reutilise.graphFor(45.8992, 6.1294, 10);
+    const a = (await reutilise.graphFor(45.864, 6.14, 10))!;
+    const b = (await chargerStore().graphFor(45.864, 6.14, 10))!;
+    expect(a.neuf).toBe(false);
+    expect(a.graph.meta.center).toEqual(b.graph.meta.center);
+    expect(a.graph.x).toEqual(b.graph.x);
+    expect(a.graph.y).toEqual(b.graph.y);
+  });
+
   it('le graphe chargé est presque entièrement connexe, altitudes plausibles', async () => {
     const g = (await store.graphFor(45.8992, 6.1294, 20))!.graph;
     const vu = new Uint8Array(g.n);
