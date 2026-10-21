@@ -47,10 +47,10 @@ projeté autour du départ de la demande qui l'a construit. Deux départs
 voisins (mêmes tuiles) donnent donc des boucles différentes selon l'ordre
 des demandes (mesuré : Sévrier 10 km / 100 m, tenu ou non selon la
 recherche faite avant ; le générateur réutilisé n'y est pour rien).
-Correction proposée : un centre de projection fixé par les tuiles (centre
-de leur emprise), donc un graphe qui ne dépend que de la demande. Elle
-change tous les résultats du banc une fois (nouvelle référence), sans
-toucher aux règles : commit à part, avant l'étape 2.
+Corrigé avant l'étape 2 : le centre de projection est celui de l'emprise
+des tuiles (`empriseTuiles`), le graphe ne dépend plus que de la demande.
+Nouvelle référence du banc ; tous les chiffres bougent de moins d'un point
+(D+ visé, balayage complet : 62,1 → 61,6 %).
 
 Conséquences : une règle corrigée dans l'un doit l'être dans l'autre (et ne
 l'a pas toujours été : pas de départ décalé ni de suggestion en zone) ; la
