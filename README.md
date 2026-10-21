@@ -120,7 +120,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm test           # tests unitaires (Vitest)
 npm run bench      # banc de tests : Annecy (cadrage), Alsace, Île-de-France ; écrit RESULTATS.md
-npm run bench -- --no-write --jeu idf   # un seul jeu, sans écrire
+npm run bench -- --no-write --jeu idf   # un seul jeu (annecy, libre, alsace, idf, zone, seances, impossibles), sans écrire
 npm run build      # site statique dans dist/
 ```
 
@@ -211,7 +211,7 @@ base à changer).
 | `src/core/voies.ts` | Type de voie le long d'une boucle (bandeau du profil) |
 | `src/worker.ts`, `src/main.ts` | Web Worker et interface (Leaflet) |
 | `scripts/prepare_data.py` | Préparation des données |
-| `bench/` | Banc de tests et cas de test |
+| `bench/` | Banc de tests : `bench.ts` assemble `RESULTATS.md`, un fichier par jeu dans `bench/jeux/`, cas dans `cases.ts` |
 | `tests/` | Tests unitaires |
 
 ## Attributions
