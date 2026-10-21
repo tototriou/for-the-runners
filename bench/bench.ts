@@ -3,25 +3,29 @@
 // sortie 1 si un critère échoue sur un jeu. Les seuils sont ceux du cadrage :
 // ne pas les modifier.
 //
-// Usage : npm run bench [-- --no-write] [-- --jeu <id>]
+// Usage : npm run bench [-- --no-write] [-- --jeu <id>] [-- --sortie <fichier>]
 // Sans --jeu : les jeux « par défaut » (ceux de la CI), et RESULTATS.md est
-// réécrit. Avec --jeu : ce seul jeu, RESULTATS.md n'est pas touché.
+// réécrit. Avec --jeu : ce seul jeu, RESULTATS.md n'est pas touché ; son
+// rapport va dans le fichier donné par --sortie, s'il y en a un.
 
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Contexte, Jeu, ResultatJeu } from './commun';
+import { JEU_DPLUS, JEU_DPLUS_COMPLET } from './jeux/dplus';
 import { JEU_IMPOSSIBLES } from './jeux/impossibles';
 import { JEUX_REGIONAUX } from './jeux/regionaux';
 import { JEU_SEANCES } from './jeux/seances';
 import { JEU_ZONE } from './jeux/zone';
 import { chargerStore, Generateur } from './load';
 
-/** Ordre des jeux, qui est aussi celui des sections du rapport. */
-const JEUX: Jeu[] = [...JEUX_REGIONAUX, JEU_ZONE, JEU_SEANCES, JEU_IMPOSSIBLES];
+/** Ordre des jeux, qui est aussi celui des sections du rapport ; le D+ visé, fonction centrale, d'abord. */
+const JEUX: Jeu[] = [JEU_DPLUS, JEU_DPLUS_COMPLET, ...JEUX_REGIONAUX, JEU_ZONE, JEU_SEANCES, JEU_IMPOSSIBLES];
 
 const racine = (p: string) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 const ecrire = !process.argv.includes('--no-write');
-const jeuDemande = process.argv.includes('--jeu') ? process.argv[process.argv.indexOf('--jeu') + 1] : null;
+const option = (nom: string) => (process.argv.includes(nom) ? process.argv[process.argv.indexOf(nom) + 1] : null);
+const jeuDemande = option('--jeu');
+const sortie = option('--sortie');
 if (jeuDemande && !JEUX.some((j) => j.id === jeuDemande)) {
   console.error(`Jeu inconnu : ${jeuDemande}. Jeux : ${JEUX.map((j) => j.id).join(', ')}`);
   process.exit(2);
@@ -67,5 +71,6 @@ ${resultats.map((r) => r.section).join('\n\n')}
 ${resultats.flatMap((r) => r.gpx ?? []).join('\n')}
 `;
 
-if (ecrire && !jeuDemande) writeFileSync(racine('RESULTATS.md'), rapport);
+if (sortie) writeFileSync(sortie, rapport);
+else if (ecrire && !jeuDemande) writeFileSync(racine('RESULTATS.md'), rapport);
 process.exit(toutOk ? 0 : 1);

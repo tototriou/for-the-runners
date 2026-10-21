@@ -119,8 +119,9 @@ l'emporte sur la position du navigateur.
 npm install
 npm run dev        # http://localhost:5173
 npm test           # tests unitaires (Vitest)
-npm run bench      # banc de tests : Annecy (cadrage), Alsace, Île-de-France ; écrit RESULTATS.md
-npm run bench -- --no-write --jeu idf   # un seul jeu (annecy, libre, alsace, idf, zone, seances, impossibles), sans écrire
+npm run bench      # banc de tests : D+ visé, Annecy (cadrage), Alsace, Île-de-France… ; écrit RESULTATS.md
+npm run bench -- --no-write --jeu idf   # un seul jeu (dplus, annecy, libre, alsace, idf, zone, seances, impossibles), sans écrire
+npm run bench -- --jeu dplus-complet --sortie dplus.md   # balayage D+ visé complet (380 demandes, hors CI)
 npm run build      # site statique dans dist/
 ```
 

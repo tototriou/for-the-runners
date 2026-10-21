@@ -116,3 +116,54 @@ export const CAS_ZONE_CIBLE: { region: string; depart: string; lat: number; lon:
   { region: 'idf', depart: 'Meudon → forêt (départ dehors)', lat: 48.8125, lon: 2.238, distanceKm: 12, dplusM: 200,
     zone: { kind: 'polygone', points: [[48.775, 2.2], [48.775, 2.25], [48.8, 2.25], [48.8, 2.2]] } },
 ];
+
+export type Relief = 'plat' | 'colline' | 'piemont' | 'montagne';
+export const RELIEFS: Relief[] = ['plat', 'colline', 'piemont', 'montagne'];
+
+/**
+ * Départs du jeu « D+ visé », classés par relief autour du départ. `ci` :
+ * les 10 retenus pour la CI (2 à 3 par relief, les trois régions).
+ */
+export const DEPARTS_DPLUS: { region: string; nom: string; relief: Relief; lat: number; lon: number; ci: boolean }[] = [
+  { region: 'annecy', nom: 'Annecy centre', relief: 'montagne', lat: 45.8992, lon: 6.1294, ci: true },
+  { region: 'annecy', nom: 'Annecy-le-Vieux', relief: 'montagne', lat: 45.919, lon: 6.143, ci: false },
+  { region: 'annecy', nom: 'Seynod', relief: 'colline', lat: 45.886, lon: 6.095, ci: true },
+  { region: 'annecy', nom: 'Sévrier', relief: 'montagne', lat: 45.864, lon: 6.14, ci: true },
+  { region: 'annecy', nom: 'Pringy', relief: 'colline', lat: 45.946, lon: 6.125, ci: false },
+  { region: 'alsace', nom: 'Strasbourg, Krutenau', relief: 'plat', lat: 48.5764, lon: 7.7569, ci: true },
+  { region: 'alsace', nom: 'Strasbourg, Orangerie', relief: 'plat', lat: 48.5925, lon: 7.7745, ci: false },
+  { region: 'alsace', nom: 'Colmar', relief: 'plat', lat: 48.079, lon: 7.3585, ci: false },
+  { region: 'alsace', nom: 'Mulhouse', relief: 'colline', lat: 47.75, lon: 7.34, ci: false },
+  { region: 'alsace', nom: 'Saverne', relief: 'colline', lat: 48.741, lon: 7.363, ci: false },
+  { region: 'alsace', nom: 'Obernai', relief: 'piemont', lat: 48.4628, lon: 7.4823, ci: true },
+  { region: 'alsace', nom: 'Barr', relief: 'piemont', lat: 48.4085, lon: 7.449, ci: true },
+  { region: 'alsace', nom: 'Ribeauvillé', relief: 'piemont', lat: 48.195, lon: 7.319, ci: false },
+  { region: 'alsace', nom: 'Munster', relief: 'montagne', lat: 48.041, lon: 7.134, ci: true },
+  { region: 'alsace', nom: 'Le Hohwald', relief: 'montagne', lat: 48.405, lon: 7.326, ci: false },
+  { region: 'idf', nom: 'Paris, canal Saint-Martin', relief: 'plat', lat: 48.871, lon: 2.365, ci: true },
+  { region: 'idf', nom: 'Paris, Montmartre', relief: 'colline', lat: 48.8867, lon: 2.3431, ci: true },
+  { region: 'idf', nom: 'Meudon', relief: 'colline', lat: 48.813, lon: 2.236, ci: true },
+  { region: 'idf', nom: 'Chevreuse', relief: 'colline', lat: 48.707, lon: 2.039, ci: false },
+  { region: 'idf', nom: 'Fontainebleau', relief: 'colline', lat: 48.404, lon: 2.7, ci: false },
+];
+
+/**
+ * D+ visés par distance. CI : 10 km, un D+ par tranche de D+ par km
+ * (5, 10, 30, 40, 80 m/km) ; complet : la grille entière, de 5 à 15 km.
+ */
+export const CIBLES_DPLUS_CI: Record<number, number[]> = { 10: [50, 100, 300, 400, 800] };
+export const CIBLES_DPLUS_COMPLET: Record<number, number[]> = {
+  5: [50, 100, 200, 300, 400],
+  10: [50, 100, 200, 300, 400, 600, 800],
+  15: [100, 200, 300, 400, 600, 800, 1000],
+};
+
+export interface CasDplus { region: string; depart: string; relief: Relief; lat: number; lon: number; distanceKm: number; dplusM: number }
+
+export function casDplus(complet: boolean): CasDplus[] {
+  const cibles = complet ? CIBLES_DPLUS_COMPLET : CIBLES_DPLUS_CI;
+  return DEPARTS_DPLUS.filter((d) => complet || d.ci).flatMap((d) =>
+    Object.entries(cibles).flatMap(([km, l]) => l.map((dplusM) => ({
+      region: d.region, depart: d.nom, relief: d.relief, lat: d.lat, lon: d.lon, distanceKm: Number(km), dplusM,
+    }))));
+}
