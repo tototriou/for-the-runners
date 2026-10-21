@@ -17,6 +17,7 @@ const panel = $('panel');
 const form = $<HTMLFormElement>('form');
 const go = $<HTMLButtonElement>('go');
 const statusEl = $('status');
+const statusTexte = $('status-texte');
 const results = $<HTMLOListElement>('results');
 const points = $('points');
 const essayer = $<HTMLButtonElement>('essayer');
@@ -129,8 +130,10 @@ let choisie = 0;
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 let idReq = 0;
 
+$('status-fermer').addEventListener('click', () => setStatus(''));
+/** Message au-dessus du panneau ; une alerte se ferme par sa croix. */
 function setStatus(texte: string, alerte = false) {
-  statusEl.textContent = texte;
+  statusTexte.textContent = texte;
   statusEl.hidden = !texte;
   statusEl.classList.toggle('alerte', alerte);
 }
@@ -230,7 +233,7 @@ function setVue(v: Vue) {
   profilBox.hidden = v !== 'detail';
   // Le message du calcul concerne la liste, pas une boucle ouverte.
   if (v === 'detail') statusEl.hidden = true;
-  else statusEl.hidden = !statusEl.textContent;
+  else statusEl.hidden = !statusTexte.textContent;
   if (v !== 'detail') curseurCarte.remove();
   // La carte change de taille quand le profil apparaît sous elle.
   requestAnimationFrame(() => map.invalidateSize());
@@ -369,7 +372,7 @@ function allerAMaPosition(demande: boolean) {
       selectRegion.value = r.id;
       map.setView([lat, lon], 14);
       placerDepart(L.latLng(lat, lon));
-      setStatus(demande ? 'Départ placé à ta position.' : '');
+      setStatus('');
     },
     () => {
       if (demande) setStatus('Position indisponible : autorise la localisation pour ce site, ou touche la carte.', true);
@@ -487,11 +490,10 @@ function chiffres(l: BoucleAffichee, classe = ''): string {
 function afficher(res: Reponse) {
   effacerBoucles();
   boucles = res.loops;
-  const ch = res.chargement;
-  const duree = ((res.stats.ms + (ch?.ms ?? 0)) / 1000).toFixed(1).replace('.', ',');
   // Alerte : demande impossible, départ décalé, ou objectif de séance manqué.
   const alerte = !res.ok || !!res.depart || /Aucun tronçon|Pas de vraie côte/.test(res.message);
-  setStatus(`${res.message} (${duree} s)`, alerte);
+  // Le résumé d'une réussite n'apporte rien : seules les alertes s'affichent.
+  setStatus(alerte ? res.message : '', alerte);
   // Demande impossible : un D+ réalisable, à essayer en un clic.
   essayer.hidden = !res.suggestion;
   if (res.suggestion) {

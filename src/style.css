@@ -232,6 +232,11 @@ form { display: flex; flex-direction: column; gap: 18px; }
 
 .etat { margin: 4px 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--fond-doux); font-size: 14px; line-height: 1.4; }
 .etat.alerte { background: var(--orange-pale); border: 1px solid var(--orange-contour); }
+.etat:not([hidden]) { display: flex; align-items: flex-start; gap: 8px; }
+.etat span { flex: 1; }
+.fermer { flex: none; width: 32px; height: 32px; margin: -6px -8px -6px 0; border: 0; border-radius: 16px; background: transparent; display: grid; place-items: center; color: var(--gris); }
+.fermer svg { width: 18px; height: 18px; }
+.etat:not(.alerte) .fermer { display: none; }
 .credits { margin-top: 20px; font-size: 12px; color: var(--gris); }
 .credits a { color: inherit; }
 
