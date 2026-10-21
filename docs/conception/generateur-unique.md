@@ -38,8 +38,19 @@ pour les zones quand ce mode a été retiré.
 
 Autres doublons : le banc a sa propre copie du test « point dans le
 polygone » (`bench/bench.ts`, jeu zone) alors que `zone.ts` a
-`noeudsDansZone` ; le worker et l'interface ont deux chemins de requête
-(`generate` / `generateZone`).
+`noeudsDansZone` (corrigé à l'étape 1) ; le worker et l'interface ont deux
+chemins de requête (`generate` / `generateZone`).
+
+Résultat qui dépend de la recherche précédente : `TileStore.graphFor`
+réutilise le graphe quand les tuiles sont les mêmes, mais ce graphe est
+projeté autour du départ de la demande qui l'a construit. Deux départs
+voisins (mêmes tuiles) donnent donc des boucles différentes selon l'ordre
+des demandes (mesuré : Sévrier 10 km / 100 m, tenu ou non selon la
+recherche faite avant ; le générateur réutilisé n'y est pour rien).
+Correction proposée : un centre de projection fixé par les tuiles (centre
+de leur emprise), donc un graphe qui ne dépend que de la demande. Elle
+change tous les résultats du banc une fois (nouvelle référence), sans
+toucher aux règles : commit à part, avant l'étape 2.
 
 Conséquences : une règle corrigée dans l'un doit l'être dans l'autre (et ne
 l'a pas toujours été : pas de départ décalé ni de suggestion en zone) ; la
