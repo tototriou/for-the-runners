@@ -69,8 +69,8 @@ export function rayonZoneM(lat: number, lon: number, z: Zone): number {
   return max + 500;
 }
 
-/** Appartenance de chaque nœud à la zone. */
-function noeudsDansZone(g: Graph, start: number, zone: Zone): Uint8Array {
+/** Appartenance de chaque nœud à la zone ; un cercle est centré sur le nœud de départ. */
+export function noeudsDansZone(g: Graph, start: number, zone: Zone): Uint8Array {
   const dedans = new Uint8Array(g.n);
   if (zone.kind === 'cercle') {
     const r2 = zone.rayonM ** 2;

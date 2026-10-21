@@ -1,7 +1,7 @@
 // Jeu « zone » : boucles dans un cercle ou une zone dessinée, D+ visé.
 
 import type { Graph } from '../../src/core/graph';
-import { ZoneGenerator, rayonZoneM } from '../../src/core/zone';
+import { noeudsDansZone, ZoneGenerator, rayonZoneM } from '../../src/core/zone';
 import { CAS_ZONE_CIBLE } from '../cases';
 import { afficherCriteres, SEUIL_TEMPS_MS, tableauCriteres, type Contexte, type Critere, type Jeu } from '../commun';
 
@@ -35,19 +35,10 @@ export const JEU_ZONE: Jeu = {
       const gn = (rn as { graph: Graph | null }).graph;
       let refPart = NaN;
       if (gn && rn.loops[0]) {
-        const z = c.zone;
-        const dedans = (n: number) => {
-          const lat = gn.lat[n], lon = gn.lon[n];
-          if (z.kind === 'cercle') return Math.hypot((lon - c.lon) * 111320 * Math.cos((c.lat * Math.PI) / 180), (lat - c.lat) * 111200) <= z.rayonM;
-          let ins = false;
-          const p = z.points;
-          for (let a = 0, k = p.length - 1; a < p.length; k = a++) {
-            if ((p[a][0] > lat) !== (p[k][0] > lat) && lon < ((p[k][1] - p[a][1]) * (lat - p[a][0])) / (p[k][0] - p[a][0]) + p[a][1]) ins = !ins;
-          }
-          return ins;
-        };
+        // Même définition de la zone que le générateur.
+        const dedans = noeudsDansZone(gn, rn.startNode, c.zone);
         let lz = 0;
-        for (const e of rn.loops[0].edges) if (dedans(gn.a[e]) && dedans(gn.b[e])) lz += gn.len[e];
+        for (const e of rn.loops[0].edges) if (dedans[gn.a[e]] && dedans[gn.b[e]]) lz += gn.len[e];
         refPart = lz / rn.loops[0].distanceM;
       }
       const zoneTxt = c.zone.kind === 'cercle' ? `cercle ${c.zone.rayonM / 1000} km` : 'zone dessinée';
