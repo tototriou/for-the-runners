@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeGraph, type Graph, type ZoneDoc } from '../src/core/graph';
-import { ARRIVEE_M, couperDemiTours, DEMI_TOUR_MIN_M, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
+import { couperDemiTours, demiTours, LoopGenerator, type Loop } from '../src/core/loops';
+import { ARRIVEE_M, DEMI_TOUR_MIN_M } from '../src/core/regles';
 import { toGpx } from '../src/core/gpx';
 import { Router } from '../src/core/router';
 import { mesurerSeance } from '../src/core/seances';

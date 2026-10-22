@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css';
 import './style.css';
 import { toGpx } from './core/gpx';
 import type { LoopResponse } from './core/loops';
+import { TOL_DPLUS } from './core/regles';
 import { TRONCON_DEFAUT_M, TYPES_SEANCE, type Seance, type TypeSeance } from './core/seances';
 import type { Terrain } from './core/graph';
 import type { Manifest, RegionMeta } from './core/tiles';
@@ -479,7 +480,7 @@ function etiquettes(l: BoucleAffichee, avecParts = true): string {
 }
 
 function chiffres(l: BoucleAffichee, classe = ''): string {
-  const ecartDplus = !dernierLibre && Math.abs(l.ecartDplus) > 0.15;
+  const ecartDplus = !dernierLibre && Math.abs(l.ecartDplus) > TOL_DPLUS;
   return `<div class="chiffres ${classe}">
     <div class="chiffre"><b>${km(l.distanceM)}<small> km</small></b><span>Distance</span></div>
     <div class="chiffre ${ecartDplus ? 'alerte' : ''}"><b>${Math.round(l.dplusM)}<small> m</small></b><span>${dernierLibre ? 'D+' : `D+ ${pct(l.ecartDplus)}`}</span></div>

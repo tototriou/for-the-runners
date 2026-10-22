@@ -11,9 +11,12 @@
 
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
 import {
-  ARRIVEE_M, BUDGET_TRAVAIL, cleChoix, estPlate, couperDemiTours, coutsAretes, DEMI_TOUR_MIN_M, finaliser, jaccard, mesurer,
-  POIDS_HEURISTIQUE_MIN, PRIX_ECART_ARRIVEE, rng, SEUIL_ALLER_RETOUR, libelleTolDistance, scoreDistance, tolDistanceM, TOL_DPLUS, type Loop, type LoopResponse,
+  BUDGET_TRAVAIL, couperDemiTours, coutsAretes, finaliser, jaccard, mesurer, POIDS_HEURISTIQUE_MIN, rng, type Loop, type LoopResponse,
 } from './loops';
+import {
+  ARRIVEE_M, cleChoix, dansTolerance, DEMI_TOUR_MIN_M, estPlate, JACCARD_MAX, libelleTolDistance, N_BOUCLES, PRIX_ECART_ARRIVEE, scoreBoucle,
+  type Cible,
+} from './regles';
 import { Router } from './router';
 
 export type Zone =
@@ -140,6 +143,7 @@ export class ZoneGenerator {
     // Coûts : relief attiré, arêtes hors zone interdites (ou chères pour
     // l'accès si le départ est dehors).
     const cible = req.dplusM == null || Number.isNaN(req.dplusM) ? null : Math.max(req.dplusM, 1);
+    const t: Cible = { d: D, h: cible };
     const couts = BETAS.map((beta) => {
       const { cost, minFactor } = coutsAretes(g, beta, req.terrain);
       const proche = (n: number) => (g.x[n] - g.x[start]) ** 2 + (g.y[n] - g.y[start]) ** 2 <= ACCES_M ** 2;
@@ -249,25 +253,22 @@ export class ZoneGenerator {
       if (!req.allersRetours) couperDemiTours(g, edges, dirs, DEMI_TOUR_MIN_M);
       if (edges.length === 0) continue;
       const m = mesurer(g, edges, dirs);
-      const score = scoreCible(m, { d: D, h: cible });
-      cands.push({ edges, dirs, ...m, score });
+      cands.push({ edges, dirs, ...m, score: scoreBoucle(m, t) });
     }
 
-    const dansTol = (c: { distanceM: number; dplusM: number }) =>
-      Math.abs(c.distanceM - D) <= tolDistanceM(D) && (cible == null || Math.abs(c.dplusM - cible) / cible <= TOL_DPLUS);
-    cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || cleChoix(a, estPlate({ d: D, h: cible })) - cleChoix(b, estPlate({ d: D, h: cible })));
+    const dansTol = (c: { distanceM: number; dplusM: number }) => dansTolerance(c, t);
+    cands.sort((a, b) => Number(dansTol(b)) - Number(dansTol(a)) || cleChoix(a, estPlate(t)) - cleChoix(b, estPlate(t)));
     const choisies: { c: Cand; set: Set<number> }[] = [];
     for (const c of cands) {
       const set = new Set(c.edges);
-      if (choisies.every((s) => jaccard(set, s.set) < 0.5)) choisies.push({ c, set });
-      if (choisies.length === 5) break;
+      if (choisies.every((s) => jaccard(set, s.set) < JACCARD_MAX)) choisies.push({ c, set });
+      if (choisies.length === N_BOUCLES) break;
     }
     const stats = { candidates: cands.length, routes, travail: this.travail, ms: performance.now() - t0 };
     if (choisies.length === 0) return { ...vide('Aucune boucle n’a pu être tracée dans cette zone.'), stats, startNode: start };
 
     const loops: Loop[] = choisies.map(({ c }) => {
-      const l = finaliser(g, c, { d: D, h: cible });
-      l.dansTolerance = dansTol(c);
+      const l = finaliser(g, c, t);
       let dansZone = 0;
       for (const e of c.edges) if (dedans[g.a[e]] && dedans[g.b[e]]) dansZone += g.len[e];
       l.partZone = dansZone / c.distanceM;
@@ -295,13 +296,6 @@ export class ZoneGenerator {
         : `${nOk} boucle${nOk > 1 ? 's' : ''} dans la tolérance sur ${loops.length}, ${zoneTxt} (meilleure : ${zonePct}).`,
     };
   }
-}
-
-/** Score du mode normal : écarts relatifs aux tolérances, allers-retours. */
-function scoreCible(m: { distanceM: number; dplusM: number; allerRetour: number }, t: { d: number; h: number | null }) {
-  const eh = t.h == null ? 0 : Math.abs(m.dplusM - t.h) / t.h / TOL_DPLUS;
-  const f = (x: number) => (x <= 1 ? x : 1 + 2 * (x - 1));
-  return scoreDistance(m.distanceM, t.d) + f(eh) + m.allerRetour / SEUIL_ALLER_RETOUR;
 }
 
 /**
