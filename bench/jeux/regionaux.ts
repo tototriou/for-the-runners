@@ -2,7 +2,8 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { demiTours, type LoopResponse } from '../../src/core/loops';
+import type { LoopResponse } from '../../src/core/loops';
+import { demiTours } from '../../src/core/mesures';
 import { DEMI_TOUR_MIN_M, SEUIL_ALLER_RETOUR } from '../../src/core/regles';
 import type { Graph } from '../../src/core/graph';
 import { toGpx } from '../../src/core/gpx';

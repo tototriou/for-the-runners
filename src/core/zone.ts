@@ -11,7 +11,8 @@
 
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
 import { coutsAretes, POIDS_HEURISTIQUE_MIN } from './couts';
-import { BUDGET_TRAVAIL, couperDemiTours, finaliser, jaccard, mesurer, rng, type Loop, type LoopResponse } from './loops';
+import { BUDGET_TRAVAIL, rng, type Loop, type LoopResponse } from './loops';
+import { couperDemiTours, finaliser, jaccard, mesurer } from './mesures';
 import {
   ARRIVEE_M, cleChoix, dansTolerance, DEMI_TOUR_MIN_M, estPlate, JACCARD_MAX, libelleTolDistance, N_BOUCLES, PRIX_ECART_ARRIVEE, scoreBoucle,
   type Cible,
