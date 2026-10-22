@@ -202,9 +202,13 @@ base à changer).
 
 | Chemin | Rôle |
 | --- | --- |
-| `src/core/graph.ts` | Décodage du graphe, adjacence, index spatial |
+| `src/core/graph.ts` | Décodage du graphe, adjacence, index spatial, classes de voies |
+| `src/core/generateur.ts` | Point d'entrée d'une demande (Worker et banc) : tuiles, graphe, générateur |
+| `src/core/regles.ts` | Règles du produit : tolérances, score, choix final (source de vérité) |
+| `src/core/couts.ts` | Coût des arêtes pour A* : relief, terrain, classe de voie, agrément, voies rapides |
+| `src/core/mesures.ts` | Mesures d'une boucle : distance, D+, demi-tours, virages, agrément, tracé final |
 | `src/core/router.ts` | A* à coût paramétrable (relief, terrain, tronçons déjà pris) |
-| `src/core/loops.ts` | Générateur de boucles : candidates, ajustement du rayon, score, variantes, diversité |
+| `src/core/loops.ts` | Générateur de boucles : candidates, ajustement du rayon, variantes, départ décalé, suggestion de D+ |
 | `src/core/seances.ts` | Types de séance : réglages, mesures (traversées, tronçon continu, côte), terme de choix |
 | `src/core/zone.ts` | Boucles dans une zone : montées et descentes enchaînées vers le D+ visé |
 | `src/core/tiles.ts` | Choix des tuiles autour du départ, cache, fusion en un graphe |

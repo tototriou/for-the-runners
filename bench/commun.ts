@@ -1,7 +1,7 @@
 // Éléments communs aux jeux du banc : contexte, critères, seuils, mise en forme.
 
 import { CLASSES, CLS_INCONNUE } from '../src/core/graph';
-import type { Generateur } from './load';
+import type { Generateur } from '../src/core/generateur';
 
 export const SEUIL_REUSSITE = 0.8;
 export const SEUIL_TEMPS_MS = 10_000;

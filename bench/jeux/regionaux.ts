@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import type { LoopResponse } from '../../src/core/loops';
 import { demiTours } from '../../src/core/mesures';
 import { DEMI_TOUR_MIN_M, SEUIL_ALLER_RETOUR } from '../../src/core/regles';
-import type { Graph } from '../../src/core/graph';
 import { toGpx } from '../../src/core/gpx';
 import { casDeTest, casRegionaux, type Cas } from '../cases';
 import {
@@ -51,14 +50,14 @@ async function jouer(ctx: Contexte, titre: string, description: string, cas: Cas
   process.stdout.write(`${titre} : `);
   for (const c of cas) {
     const r = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: c.terrain, seed: SEED });
-    msChargementMax = Math.max(msChargementMax, gen.msChargement);
+    if (r.chargement?.neuf) msChargementMax = Math.max(msChargementMax, r.chargement.ms);
     reponses.push({ c, r });
     temps.push(r.stats.ms);
     const ok = r.loops.some((l) => l.dansTolerance);
     if (ok) reussis++;
     if (ok && !r.depart) exacts++;
     for (const l of r.loops) allersRetours.push(l.allerRetour);
-    const g = (r as { graph: Graph | null }).graph;
+    const g = r.graph;
     if (g) {
       for (const l of r.loops) {
         nbBoucles++;

@@ -2,13 +2,13 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './style.css';
 import { toGpx } from './core/gpx';
-import type { LoopResponse } from './core/loops';
+import type { LoopRequest, LoopResponse } from './core/loops';
 import { TOL_DPLUS } from './core/regles';
 import { TRONCON_DEFAUT_M, TYPES_SEANCE, type Seance, type TypeSeance } from './core/seances';
 import type { Terrain } from './core/graph';
 import type { Manifest, RegionMeta } from './core/tiles';
 import type { BoucleAffichee, SegmentVoie } from './core/voies';
-import type { Zone, ZoneRequest } from './core/zone';
+import type { Zone } from './core/zone';
 
 type Reponse = Omit<LoopResponse, 'loops'> & { loops: BoucleAffichee[]; chargement?: { region: string; tuiles: number; ms: number } };
 
@@ -409,7 +409,7 @@ form.addEventListener('submit', (e) => {
   const s = zoneActive() ? null : seanceChoisie();
   $('resume-demande').textContent = `${zoneActive() ? 'Zone' : TYPES_SEANCE.find((t) => t.id === seance)!.libelle} · ${km(distanceKm * 1000).replace(',0', '')} km`;
   $('resume-detail').textContent = dplusM === undefined ? 'D+ libre' : `${dplusM} m de D+ visés`;
-  let message: Record<string, unknown>;
+  const req: LoopRequest = { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, ...(s ? { seance: s } : {}) };
   if (zoneActive()) {
     let zone: Zone;
     if (zoneType() === 'cercle') {
@@ -422,12 +422,8 @@ form.addEventListener('submit', (e) => {
       arreterDessin();
       zone = { kind: 'polygone', points: pointsZone.map((p) => [p.lat, p.lng]) };
     }
-    const req: ZoneRequest = {
-      lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, zone, allersRetours: allersRetours.checked,
-    };
-    message = { type: 'generateZone', id: ++idReq, req };
-  } else {
-    message = { type: 'generate', id: ++idReq, req: { lat: depart.lat, lon: depart.lng, distanceKm, dplusM, terrain, ...(s ? { seance: s } : {}) } };
+    req.zone = zone;
+    req.allersRetours = allersRetours.checked;
   }
   go.disabled = true;
   essayer.hidden = true;
@@ -439,7 +435,7 @@ form.addEventListener('submit', (e) => {
   sq.setAttribute('aria-hidden', 'true');
   sq.innerHTML = '<i style="width:40%"></i><i></i><i style="height:44px"></i><i style="width:70%"></i>';
   results.replaceChildren(sq);
-  worker.postMessage(message);
+  worker.postMessage({ type: 'generate', id: ++idReq, req });
 });
 
 /* ---------- Boucles proposées ---------- */

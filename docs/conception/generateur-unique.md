@@ -41,6 +41,16 @@ polygone » (`bench/bench.ts`, jeu zone) alors que `zone.ts` a
 `noeudsDansZone` (corrigé à l'étape 1) ; le worker et l'interface ont deux
 chemins de requête (`generate` / `generateZone`).
 
+Corrigé à l'étape 2 : score, tolérance et choix viennent de `regles.ts`
+(plus de copies dans `zone.ts`, ni du ±15 % dans l'interface, ni de la liste
+des voies sans voitures dans `seances.ts`) ; coûts dans `couts.ts`, mesures
+dans `mesures.ts`, classes de voies à côté de `CLASSES` (`graph.ts`, plutôt
+que `couts.ts` : ce sont des classes, pas des coûts). Une seule requête
+(`LoopRequest`, avec `zone?` et `allersRetours?`) et un seul chemin :
+`generateur.ts`, créé dès cette étape parce que le banc (`bench/load.ts`)
+avait sa propre copie du chemin du Worker. Il choisit encore entre les deux
+générateurs ; l'étape 3 les remplace par des stratégies.
+
 Résultat qui dépend de la recherche précédente : `TileStore.graphFor`
 réutilise le graphe quand les tuiles sont les mêmes, mais ce graphe est
 projeté autour du départ de la demande qui l'a construit. Deux départs

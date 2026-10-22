@@ -9,9 +9,9 @@
 // peut être répétée quand il n'y a pas d'autre choix. Le dernier point est
 // choisi pour retomber dans la fourchette de distance (±500 m, ou ±5 %).
 
-import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
+import { distanceToNode, nearestNode, toXY, type Graph } from './graph';
 import { coutsAretes, POIDS_HEURISTIQUE_MIN } from './couts';
-import { BUDGET_TRAVAIL, rng, type Loop, type LoopResponse } from './loops';
+import { BUDGET_TRAVAIL, rng, type Loop, type LoopRequest, type LoopResponse } from './loops';
 import { couperDemiTours, finaliser, jaccard, mesurer } from './mesures';
 import {
   ARRIVEE_M, cleChoix, dansTolerance, DEMI_TOUR_MIN_M, estPlate, JACCARD_MAX, libelleTolDistance, N_BOUCLES, PRIX_ECART_ARRIVEE, scoreBoucle,
@@ -22,21 +22,6 @@ import { Router } from './router';
 export type Zone =
   | { kind: 'cercle'; rayonM: number }
   | { kind: 'polygone'; points: [number, number][] };
-
-export interface ZoneRequest {
-  lat: number;
-  lon: number;
-  distanceKm: number;
-  terrain: Terrain;
-  zone: Zone;
-  /** D+ visé ; absent : D+ libre, seule la distance compte. */
-  dplusM?: number;
-  /** Répéter la même côte (aller-retour) est permis. */
-  allersRetours?: boolean;
-  /** Distance tolérée entre l'arrivée et le départ, en m (défaut ARRIVEE_M ; 0 : boucle fermée). */
-  arriveeM?: number;
-  seed?: number;
-}
 
 // Moins de 1,3 s sur les cas du banc ; le budget de travail borne les
 // zones denses.
@@ -120,7 +105,7 @@ export class ZoneGenerator {
     this.used = new Uint16Array(g.m);
   }
 
-  generate(req: ZoneRequest): LoopResponse {
+  generate(req: LoopRequest & { zone: Zone }): LoopResponse {
     const t0 = performance.now();
     const g = this.g;
     this.travail = 0;

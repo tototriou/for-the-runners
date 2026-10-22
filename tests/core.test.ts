@@ -9,6 +9,7 @@ import { mesurerSeance } from '../src/core/seances';
 import { voiesBoucle } from '../src/core/voies';
 import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
+import { Generateur } from '../src/core/generateur';
 
 /**
  * Grille synthétique n × n de pas `pas` mètres autour de (45.9, 6.13), avec
@@ -380,6 +381,17 @@ describe('données réelles (tuiles d\u2019Annecy)', () => {
     // Quelques nœuds distincts peuvent partager une position (pont au-dessus
     // d'une route) ; un recollage raté en donnerait des milliers.
     expect(doublons / g.n).toBeLessThan(0.01);
+  });
+
+  it('une seule requête : avec une zone, la boucle y reste ; sans, calcul autour du départ', async () => {
+    const gen = new Generateur(chargerStore());
+    const depart = { lat: 45.8992, lon: 6.1294, distanceKm: 6, terrain: 'mixte' as const };
+    const avec = await gen.generate({ ...depart, dplusM: 150, zone: { kind: 'cercle', rayonM: 1500 } });
+    expect(avec.loops.length).toBeGreaterThan(0);
+    for (const l of avec.loops) expect(l.partZone).toBe(1);
+    const sans = await gen.generate(depart);
+    expect(sans.ok).toBe(true);
+    expect(sans.loops[0].partZone).toBeUndefined();
   });
 
   it('le graphe ne dépend que des tuiles, pas de la recherche précédente', async () => {

@@ -17,6 +17,7 @@ import { distanceToNode, nearestNode, type Graph, type Terrain } from './graph';
 import { coutsAretes, POIDS_HEURISTIQUE_MIN } from './couts';
 import { couperDemiTours, finaliser, jaccard, mesurer } from './mesures';
 import { Router } from './router';
+import type { Zone } from './zone';
 import { avertissementSeance, seanceActive, coutsTraversees, mesurerSeance, REGLAGES, resumeSeance, termeSeance, type MesuresSeance, type ReglagesSeance, type Seance } from './seances';
 import {
   ARRIVEE_M, cleChoix, dansTolerance, DEMI_TOUR_MIN_M, estPlate, JACCARD_MAX, libelleTolDistance, N_BOUCLES, PRIX_ECART_ARRIVEE,
@@ -39,6 +40,10 @@ export interface LoopRequest {
   tourParc?: 'permis' | 'impose' | 'exclu';
   /** Type de séance : en plus du calcul par défaut (absent : calcul inchangé). */
   seance?: Seance;
+  /** Zone où la boucle doit rester (cercle autour du départ ou polygone dessiné). */
+  zone?: Zone;
+  /** Répéter la même côte (aller-retour) est permis ; pris en compte dans une zone. */
+  allersRetours?: boolean;
 }
 
 export interface Loop {

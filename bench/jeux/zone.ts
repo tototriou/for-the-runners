@@ -1,7 +1,6 @@
 // Jeu « zone » : boucles dans un cercle ou une zone dessinée, D+ visé.
 
-import type { Graph } from '../../src/core/graph';
-import { noeudsDansZone, ZoneGenerator, rayonZoneM } from '../../src/core/zone';
+import { noeudsDansZone } from '../../src/core/zone';
 import { CAS_ZONE_CIBLE } from '../cases';
 import { afficherCriteres, SEUIL_TEMPS_MS, tableauCriteres, type Contexte, type Critere, type Jeu } from '../commun';
 
@@ -16,9 +15,8 @@ export const JEU_ZONE: Jeu = {
     const cas = CAS_ZONE_CIBLE.filter((c) => presentes.has(c.region));
     process.stdout.write('Zone + D+ visé : ');
     for (const c of cas) {
-      const r = (await gen.store.graphFor(c.lat, c.lon, c.distanceKm, rayonZoneM(c.lat, c.lon, c.zone)))!;
-      const g = r.graph;
-      const res = new ZoneGenerator(g).generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: 'mixte', zone: c.zone, seed: SEED });
+      const res = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: 'mixte', zone: c.zone, seed: SEED });
+      const g = res.graph!;
       tMax = Math.max(tMax, res.stats.ms);
       const b = res.loops[0];
       const ok = res.loops.some((l) => l.dansTolerance);
@@ -32,7 +30,7 @@ export const JEU_ZONE: Jeu = {
       }
       // Référence : le mode normal sans zone, même demande ; part de sa meilleure boucle dans la zone.
       const rn = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: 'mixte', seed: SEED });
-      const gn = (rn as { graph: Graph | null }).graph;
+      const gn = rn.graph;
       let refPart = NaN;
       if (gn && rn.loops[0]) {
         // Même définition de la zone que le générateur.

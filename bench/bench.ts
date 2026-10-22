@@ -16,7 +16,8 @@ import { JEU_IMPOSSIBLES } from './jeux/impossibles';
 import { JEUX_REGIONAUX } from './jeux/regionaux';
 import { JEU_SEANCES } from './jeux/seances';
 import { JEU_ZONE } from './jeux/zone';
-import { chargerStore, Generateur } from './load';
+import { Generateur } from '../src/core/generateur';
+import { chargerStore } from './load';
 
 /** Ordre des jeux, qui est aussi celui des sections du rapport ; le D+ visé, fonction centrale, d'abord. */
 const JEUX: Jeu[] = [JEU_DPLUS, JEU_DPLUS_COMPLET, ...JEUX_REGIONAUX, JEU_ZONE, JEU_SEANCES, JEU_IMPOSSIBLES];
