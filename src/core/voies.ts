@@ -1,7 +1,7 @@
 // Type de voie le long d'une boucle, pour le bandeau sous le profil.
 
-import { TYPE_SENTIER, type Graph } from './graph';
-import { CODES_SANS_VOITURE, type Loop } from './loops';
+import { CODES_SANS_VOITURE, TYPE_SENTIER, type Graph } from './graph';
+import type { Loop } from './loops';
 
 /** Chemin (sentier, piste), voie sans voitures (voie verte, piétonne…) ou route. */
 export type Voie = 'chemin' | 'sans-voitures' | 'route';

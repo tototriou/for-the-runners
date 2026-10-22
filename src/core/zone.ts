@@ -10,9 +10,8 @@
 // choisi pour retomber dans la fourchette de distance (±500 m, ou ±5 %).
 
 import { distanceToNode, nearestNode, toXY, type Graph, type Terrain } from './graph';
-import {
-  BUDGET_TRAVAIL, couperDemiTours, coutsAretes, finaliser, jaccard, mesurer, POIDS_HEURISTIQUE_MIN, rng, type Loop, type LoopResponse,
-} from './loops';
+import { coutsAretes, POIDS_HEURISTIQUE_MIN } from './couts';
+import { BUDGET_TRAVAIL, couperDemiTours, finaliser, jaccard, mesurer, rng, type Loop, type LoopResponse } from './loops';
 import {
   ARRIVEE_M, cleChoix, dansTolerance, DEMI_TOUR_MIN_M, estPlate, JACCARD_MAX, libelleTolDistance, N_BOUCLES, PRIX_ECART_ARRIVEE, scoreBoucle,
   type Cible,

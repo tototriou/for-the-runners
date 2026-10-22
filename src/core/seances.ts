@@ -9,7 +9,7 @@
 //    du même groupe (dans la tolérance ou non) : le taux de réussite n'en
 //    dépend pas.
 
-import { CLASSES, TYPE_SENTIER, type Graph } from './graph';
+import { CLASSES, CODES_SANS_VOITURE, TYPE_SENTIER, type Graph } from './graph';
 
 export type TypeSeance = 'footing' | 'sortie-longue' | 'fractionne' | 'seuil' | 'cotes' | 'recuperation';
 
@@ -89,8 +89,7 @@ let codesVoitures: Set<number> | null = null;
 /** Classes ouvertes aux voitures (une rue à traverser), hors voies piétonnes et chemins. */
 function voitures(): Set<number> {
   if (!codesVoitures) {
-    const sans = new Set(['pedestrian', 'cycleway', 'path', 'track', 'footway', 'steps', 'bridleway', 'living_street']);
-    codesVoitures = new Set(CLASSES.map((c, k) => (sans.has(c) ? -1 : k)).filter((k) => k >= 0));
+    codesVoitures = new Set(CLASSES.map((_, k) => (CODES_SANS_VOITURE.has(k) ? -1 : k)).filter((k) => k >= 0));
   }
   return codesVoitures;
 }

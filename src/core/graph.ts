@@ -13,6 +13,16 @@ export const CLASSES = [
 ] as const;
 /** Code de classe absent (données antérieures au champ « cls »). */
 export const CLS_INCONNUE = 255;
+/** Voies interdites aux voitures (voies vertes, pistes cyclables, piétonnes, sentiers). */
+export const VOIES_SANS_VOITURE: readonly (typeof CLASSES)[number][] = [
+  'pedestrian', 'cycleway', 'path', 'track', 'footway', 'steps', 'bridleway',
+  // Zone de rencontre : le piéton y est prioritaire, les voitures à 20 km/h
+  // (les quais de la Grande Île à Strasbourg) ; elle compte comme sans voitures.
+  'living_street',
+];
+export const CODES_SANS_VOITURE = new Set(VOIES_SANS_VOITURE.map((c) => CLASSES.indexOf(c)));
+/** Classes comptées comme « grande route » dans les boucles affichées. */
+export const CODES_GRANDES_ROUTES = new Set([CLASSES.indexOf('primary'), CLASSES.indexOf('secondary')]);
 
 export const TYPE_ROUTE = 0;
 export const TYPE_SENTIER = 1;

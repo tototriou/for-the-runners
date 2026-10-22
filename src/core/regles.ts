@@ -66,7 +66,7 @@ export const JACCARD_MAX = 0.5;
 /**
  * Points de score au choix final, par point de part de la distance : parcs,
  * bord de l'eau, itinéraires balisés et voies sans voitures rapportent,
- * voies rapides coûtent (rabais de coût correspondants et mesures : loops.ts).
+ * voies rapides coûtent (rabais de coût correspondants et mesures : couts.ts).
  * Poids calés sur un circuit modèle : le tour de la Grande
  * Île de Strasbourg par les quais (zones de rencontre, chemins de berge,
  * parcs). Avec l'eau à 4, les parcs à 2 et le sans-voitures à 1, l'app lui
