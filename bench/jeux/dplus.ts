@@ -43,8 +43,8 @@ function jeuDplus(id: string, complet: boolean): Jeu {
   return {
     id,
     parDefaut: !complet,
-    async jouer({ gen, seed: SEED, presentes }: Contexte) {
-      const cas = casDplus(complet).filter((c) => presentes.has(c.region));
+    async jouer({ gen, seed: SEED, couvert }: Contexte) {
+      const cas = casDplus(complet).filter((c) => couvert(c.lat, c.lon));
       const lignes: Ligne[] = [];
       let tMax = 0;
       process.stdout.write(`${titre} : `);

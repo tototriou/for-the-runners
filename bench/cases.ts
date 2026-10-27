@@ -103,17 +103,17 @@ export const CAS_IMPOSSIBLES: (Omit<Cas, 'id'> & { attendu: string })[] = [
  * Montmartre et Fontainebleau ont servi aux premiers essais). Plus un départ hors de la zone (forêt de
  * Meudon depuis le centre de Meudon).
  */
-export const CAS_ZONE_CIBLE: { region: string; depart: string; lat: number; lon: number; distanceKm: number; dplusM: number;
+export const CAS_ZONE_CIBLE: { depart: string; lat: number; lon: number; distanceKm: number; dplusM: number;
   zone: { kind: 'cercle'; rayonM: number } | { kind: 'polygone'; points: [number, number][] } }[] = [
-  { region: 'annecy', depart: 'Annecy centre', lat: 45.8992, lon: 6.1294, distanceKm: 10, dplusM: 400, zone: { kind: 'cercle', rayonM: 2000 } },
-  { region: 'annecy', depart: 'Talloires', lat: 45.841, lon: 6.214, distanceKm: 8, dplusM: 400, zone: { kind: 'cercle', rayonM: 1500 } },
-  { region: 'annecy', depart: 'Seynod', lat: 45.885, lon: 6.09, distanceKm: 15, dplusM: 450, zone: { kind: 'cercle', rayonM: 3000 } },
-  { region: 'alsace', depart: 'Munster', lat: 48.0408, lon: 7.1347, distanceKm: 12, dplusM: 500, zone: { kind: 'cercle', rayonM: 3000 } },
-  { region: 'alsace', depart: 'Strasbourg', lat: 48.5734, lon: 7.7521, distanceKm: 8, dplusM: 60, zone: { kind: 'cercle', rayonM: 2000 } },
-  { region: 'idf', depart: 'Montmartre', lat: 48.8867, lon: 2.3431, distanceKm: 8, dplusM: 150, zone: { kind: 'cercle', rayonM: 1500 } },
-  { region: 'idf', depart: 'Meudon', lat: 48.8125, lon: 2.238, distanceKm: 12, dplusM: 200, zone: { kind: 'cercle', rayonM: 3000 } },
-  { region: 'idf', depart: 'Fontainebleau', lat: 48.4047, lon: 2.7016, distanceKm: 10, dplusM: 150, zone: { kind: 'cercle', rayonM: 2500 } },
-  { region: 'idf', depart: 'Meudon → forêt (départ dehors)', lat: 48.8125, lon: 2.238, distanceKm: 12, dplusM: 200,
+  { depart: 'Annecy centre', lat: 45.8992, lon: 6.1294, distanceKm: 10, dplusM: 400, zone: { kind: 'cercle', rayonM: 2000 } },
+  { depart: 'Talloires', lat: 45.841, lon: 6.214, distanceKm: 8, dplusM: 400, zone: { kind: 'cercle', rayonM: 1500 } },
+  { depart: 'Seynod', lat: 45.885, lon: 6.09, distanceKm: 15, dplusM: 450, zone: { kind: 'cercle', rayonM: 3000 } },
+  { depart: 'Munster', lat: 48.0408, lon: 7.1347, distanceKm: 12, dplusM: 500, zone: { kind: 'cercle', rayonM: 3000 } },
+  { depart: 'Strasbourg', lat: 48.5734, lon: 7.7521, distanceKm: 8, dplusM: 60, zone: { kind: 'cercle', rayonM: 2000 } },
+  { depart: 'Montmartre', lat: 48.8867, lon: 2.3431, distanceKm: 8, dplusM: 150, zone: { kind: 'cercle', rayonM: 1500 } },
+  { depart: 'Meudon', lat: 48.8125, lon: 2.238, distanceKm: 12, dplusM: 200, zone: { kind: 'cercle', rayonM: 3000 } },
+  { depart: 'Fontainebleau', lat: 48.4047, lon: 2.7016, distanceKm: 10, dplusM: 150, zone: { kind: 'cercle', rayonM: 2500 } },
+  { depart: 'Meudon → forêt (départ dehors)', lat: 48.8125, lon: 2.238, distanceKm: 12, dplusM: 200,
     zone: { kind: 'polygone', points: [[48.775, 2.2], [48.775, 2.25], [48.8, 2.25], [48.8, 2.2]] } },
 ];
 
@@ -124,27 +124,27 @@ export const RELIEFS: Relief[] = ['plat', 'colline', 'piemont', 'montagne'];
  * Départs du jeu « D+ visé », classés par relief autour du départ. `ci` :
  * les 10 retenus pour la CI (2 à 3 par relief, les trois régions).
  */
-export const DEPARTS_DPLUS: { region: string; nom: string; relief: Relief; lat: number; lon: number; ci: boolean }[] = [
-  { region: 'annecy', nom: 'Annecy centre', relief: 'montagne', lat: 45.8992, lon: 6.1294, ci: true },
-  { region: 'annecy', nom: 'Annecy-le-Vieux', relief: 'montagne', lat: 45.919, lon: 6.143, ci: false },
-  { region: 'annecy', nom: 'Seynod', relief: 'colline', lat: 45.886, lon: 6.095, ci: true },
-  { region: 'annecy', nom: 'Sévrier', relief: 'montagne', lat: 45.864, lon: 6.14, ci: true },
-  { region: 'annecy', nom: 'Pringy', relief: 'colline', lat: 45.946, lon: 6.125, ci: false },
-  { region: 'alsace', nom: 'Strasbourg, Krutenau', relief: 'plat', lat: 48.5764, lon: 7.7569, ci: true },
-  { region: 'alsace', nom: 'Strasbourg, Orangerie', relief: 'plat', lat: 48.5925, lon: 7.7745, ci: false },
-  { region: 'alsace', nom: 'Colmar', relief: 'plat', lat: 48.079, lon: 7.3585, ci: false },
-  { region: 'alsace', nom: 'Mulhouse', relief: 'colline', lat: 47.75, lon: 7.34, ci: false },
-  { region: 'alsace', nom: 'Saverne', relief: 'colline', lat: 48.741, lon: 7.363, ci: false },
-  { region: 'alsace', nom: 'Obernai', relief: 'piemont', lat: 48.4628, lon: 7.4823, ci: true },
-  { region: 'alsace', nom: 'Barr', relief: 'piemont', lat: 48.4085, lon: 7.449, ci: true },
-  { region: 'alsace', nom: 'Ribeauvillé', relief: 'piemont', lat: 48.195, lon: 7.319, ci: false },
-  { region: 'alsace', nom: 'Munster', relief: 'montagne', lat: 48.041, lon: 7.134, ci: true },
-  { region: 'alsace', nom: 'Le Hohwald', relief: 'montagne', lat: 48.405, lon: 7.326, ci: false },
-  { region: 'idf', nom: 'Paris, canal Saint-Martin', relief: 'plat', lat: 48.871, lon: 2.365, ci: true },
-  { region: 'idf', nom: 'Paris, Montmartre', relief: 'colline', lat: 48.8867, lon: 2.3431, ci: true },
-  { region: 'idf', nom: 'Meudon', relief: 'colline', lat: 48.813, lon: 2.236, ci: true },
-  { region: 'idf', nom: 'Chevreuse', relief: 'colline', lat: 48.707, lon: 2.039, ci: false },
-  { region: 'idf', nom: 'Fontainebleau', relief: 'colline', lat: 48.404, lon: 2.7, ci: false },
+export const DEPARTS_DPLUS: { nom: string; relief: Relief; lat: number; lon: number; ci: boolean }[] = [
+  { nom: 'Annecy centre', relief: 'montagne', lat: 45.8992, lon: 6.1294, ci: true },
+  { nom: 'Annecy-le-Vieux', relief: 'montagne', lat: 45.919, lon: 6.143, ci: false },
+  { nom: 'Seynod', relief: 'colline', lat: 45.886, lon: 6.095, ci: true },
+  { nom: 'Sévrier', relief: 'montagne', lat: 45.864, lon: 6.14, ci: true },
+  { nom: 'Pringy', relief: 'colline', lat: 45.946, lon: 6.125, ci: false },
+  { nom: 'Strasbourg, Krutenau', relief: 'plat', lat: 48.5764, lon: 7.7569, ci: true },
+  { nom: 'Strasbourg, Orangerie', relief: 'plat', lat: 48.5925, lon: 7.7745, ci: false },
+  { nom: 'Colmar', relief: 'plat', lat: 48.079, lon: 7.3585, ci: false },
+  { nom: 'Mulhouse', relief: 'colline', lat: 47.75, lon: 7.34, ci: false },
+  { nom: 'Saverne', relief: 'colline', lat: 48.741, lon: 7.363, ci: false },
+  { nom: 'Obernai', relief: 'piemont', lat: 48.4628, lon: 7.4823, ci: true },
+  { nom: 'Barr', relief: 'piemont', lat: 48.4085, lon: 7.449, ci: true },
+  { nom: 'Ribeauvillé', relief: 'piemont', lat: 48.195, lon: 7.319, ci: false },
+  { nom: 'Munster', relief: 'montagne', lat: 48.041, lon: 7.134, ci: true },
+  { nom: 'Le Hohwald', relief: 'montagne', lat: 48.405, lon: 7.326, ci: false },
+  { nom: 'Paris, canal Saint-Martin', relief: 'plat', lat: 48.871, lon: 2.365, ci: true },
+  { nom: 'Paris, Montmartre', relief: 'colline', lat: 48.8867, lon: 2.3431, ci: true },
+  { nom: 'Meudon', relief: 'colline', lat: 48.813, lon: 2.236, ci: true },
+  { nom: 'Chevreuse', relief: 'colline', lat: 48.707, lon: 2.039, ci: false },
+  { nom: 'Fontainebleau', relief: 'colline', lat: 48.404, lon: 2.7, ci: false },
 ];
 
 /**
@@ -158,12 +158,12 @@ export const CIBLES_DPLUS_COMPLET: Record<number, number[]> = {
   15: [100, 200, 300, 400, 600, 800, 1000],
 };
 
-export interface CasDplus { region: string; depart: string; relief: Relief; lat: number; lon: number; distanceKm: number; dplusM: number }
+export interface CasDplus { depart: string; relief: Relief; lat: number; lon: number; distanceKm: number; dplusM: number }
 
 export function casDplus(complet: boolean): CasDplus[] {
   const cibles = complet ? CIBLES_DPLUS_COMPLET : CIBLES_DPLUS_CI;
   return DEPARTS_DPLUS.filter((d) => complet || d.ci).flatMap((d) =>
     Object.entries(cibles).flatMap(([km, l]) => l.map((dplusM) => ({
-      region: d.region, depart: d.nom, relief: d.relief, lat: d.lat, lon: d.lon, distanceKm: Number(km), dplusM,
+      depart: d.nom, relief: d.relief, lat: d.lat, lon: d.lon, distanceKm: Number(km), dplusM,
     }))));
 }

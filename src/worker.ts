@@ -38,7 +38,7 @@ self.onmessage = async (ev: MessageEvent) => {
     if (msg.type === 'load') {
       base = msg.base;
       const manifest = await lireJson<Manifest>(`${base}manifest.json`);
-      gen = new Generateur(new TileStore(manifest, (region, tile) => lireJson<TileDoc>(`${base}${region}/${tile}.json.gz`)));
+      gen = new Generateur(new TileStore(manifest, (tile) => lireJson<TileDoc>(`${base}tuiles/${tile}.json.gz`)));
       self.postMessage({ type: 'loaded', manifest });
     } else if (msg.type === 'generate') {
       const res = await generer(msg.req);

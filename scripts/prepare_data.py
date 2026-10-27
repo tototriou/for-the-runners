@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import math
 import pickle
 import re
-import shutil
 import struct
 import subprocess
 import sys
@@ -201,6 +201,21 @@ def wkb_linestring(buf):
 
 def tuile_de(lat, lon):
     return f"{math.floor(lat / TUILE_LAT)}_{math.floor(lon / TUILE_LON)}"
+
+
+def tuile_dans_boite(nom, bbox):
+    """La case de la tuile recoupe la boîte [lonMin, latMin, lonMax, latMax]."""
+    ty, tx = (int(v) for v in nom.split("_"))
+    return (tx * TUILE_LON <= bbox[2] and (tx + 1) * TUILE_LON >= bbox[0]
+            and ty * TUILE_LAT <= bbox[3] and (ty + 1) * TUILE_LAT >= bbox[1])
+
+
+def empreinte(connecteur):
+    """Identifiant national d'un nœud partagé entre tuiles : 53 bits (entier
+    exact en JavaScript) de l'empreinte de son connecteur Overture, jamais 0,
+    valeur réservée aux nœuds propres à une tuile."""
+    v = int.from_bytes(hashlib.blake2b(connecteur.encode(), digest_size=8).digest(), "big") & ((1 << 53) - 1)
+    return v or 1
 
 
 def dans_boite(lat, lon, bbox):
@@ -889,7 +904,10 @@ def denivele(z):
     return float(d[d > 0].sum()), float(-d[d < 0].sum())
 
 
-def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, bande_itin, proj):
+def exporter_region(region, aretes, mnt, parcs, bord_eau, bande_rapide, bande_itin, proj, empreintes):
+    """Écrit les tuiles de la région dans DATA/tuiles. `empreintes` (empreinte →
+    connecteur, commun à toutes les régions de l'exécution) détecte deux nœuds
+    partagés qui auraient la même empreinte."""
     t0 = time.time()
     # Identifiants de nœud uniques dans la région, positions.
     ids, pos = {}, {}
@@ -947,10 +965,27 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
     for e, (a, *_rest) in enumerate(aretes):
         par_tuile[tuile_de(*pos[a])].append(e)
 
-    dossier = DATA / region["id"]
-    if dossier.exists():
-        shutil.rmtree(dossier)
-    dossier.mkdir(parents=True)
+    # Nœuds partagés : cités par les arêtes de plusieurs tuiles. Eux seuls
+    # portent un identifiant national ; le navigateur les recolle.
+    tuiles_du_noeud = defaultdict(set)
+    for nom, liste in par_tuile.items():
+        for e in liste:
+            for n in aretes[e][:2]:
+                tuiles_du_noeud[n].add(nom)
+    partages = {}
+    for n, s in tuiles_du_noeud.items():
+        if len(s) > 1:
+            v = empreinte(n)
+            if empreintes.setdefault(v, n) != n:
+                raise SystemExit(f"Empreinte commune à deux nœuds ({empreintes[v]}, {n}) : changer de fonction d'empreinte.")
+            partages[n] = v
+
+    dossier = DATA / "tuiles"
+    dossier.mkdir(parents=True, exist_ok=True)
+    # Une région repréparée remplace ses tuiles, y compris celles qui ont disparu.
+    for vieux in dossier.glob("*.json.gz"):
+        if tuile_dans_boite(vieux.name.split(".")[0], region["bbox"]):
+            vieux.unlink()
     tuiles, total_km, total_octets = {}, 0.0, 0
     q = lambda v: int(round(v * 1e5))
     for nom, liste in sorted(par_tuile.items()):
@@ -987,8 +1022,8 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
             G.append(flat)
             total_km += lg / 1000
         doc = {
-            "v": 2, "region": region["id"], "tile": nom,
-            "ids": [ids[n] for n in ids_loc],
+            "v": 3, "tile": nom,
+            "ids": [partages.get(n, 0) for n in ids_loc],
             "nodes": flat_noeuds,
             "nodeEle": [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc],
             "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA, "rapide": RA, "itin": IT},
@@ -1000,18 +1035,24 @@ def exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, band
         tuiles[nom] = chemin.stat().st_size
         total_octets += tuiles[nom]
 
-    lats = [p[0] for p in pos.values()]
-    lons = [p[1] for p in pos.values()]
-    meta = {
-        "id": region["id"], "name": region["name"], "bbox": region["bbox"],
-        "center": region.get("center", [(min(lats) + max(lats)) / 2, (min(lons) + max(lons)) / 2]),
+    print(f"[export] {region['id']} : {len(tuiles)} tuiles, {len(ids)} nœuds ({len(partages)} partagés), "
+          f"{len(aretes)} arêtes, {total_km:.0f} km, {total_octets / 1e6:.1f} Mo ({time.time() - t0:.0f} s)", flush=True)
+
+
+def ecrire_manifeste(release, nom_mnt):
+    """Manifeste national : les tuiles présentes dans DATA/tuiles, quelle que
+    soit l'exécution qui les a écrites, et les sources des données."""
+    tuiles = {f.name.split(".")[0]: f.stat().st_size for f in sorted((DATA / "tuiles").glob("*.json.gz"))}
+    manifeste = {
+        "v": 3, "tileDeg": [TUILE_LAT, TUILE_LON],
         "reseau": f"Overture Maps {release} (transportation, données © OpenStreetMap, ODbL)",
-        "mnt": nom_mnt, "aretes": len(aretes), "noeuds": len(ids),
-        "km": round(total_km), "octets": total_octets, "tiles": tuiles,
+        "mnt": nom_mnt,
+        "octets": sum(tuiles.values()),
+        "tuiles": tuiles,
     }
-    print(f"[export] {region['id']} : {len(tuiles)} tuiles, {len(ids)} nœuds, {len(aretes)} arêtes, "
-          f"{total_km:.0f} km, {total_octets / 1e6:.1f} Mo ({time.time() - t0:.0f} s)", flush=True)
-    return meta
+    chemin = DATA / "manifest.json"
+    chemin.write_text(json.dumps(manifeste, ensure_ascii=False, separators=(",", ":")))
+    print(f"[manifeste] {chemin} : {len(tuiles)} tuiles, {manifeste['octets'] / 1e6:.1f} Mo")
 
 
 def main():
@@ -1026,10 +1067,8 @@ def main():
     release = cfg["overtureRelease"]
     choisies = args.regions or [r["id"] for r in cfg["regions"]]
 
-    manifeste_chemin = DATA / "manifest.json"
-    anciennes = {}
-    if manifeste_chemin.exists():
-        anciennes = {r["id"]: r for r in json.loads(manifeste_chemin.read_text())["regions"]}
+    empreintes = {}
+    nom_mnt = None
     for region in cfg["regions"]:
         if region["id"] not in choisies:
             continue
@@ -1043,14 +1082,9 @@ def main():
         bord_eau = charger_bord_eau(region, release, proj)
         bande_rapide = charger_bande_rapide(region, release, proj)
         bande_itin = charger_bande_itineraires(region, proj)
-        anciennes[region["id"]] = exporter_region(region, aretes, mnt, nom_mnt, release, parcs, bord_eau, bande_rapide, bande_itin, proj)
-
-    manifeste = {
-        "v": 2, "tileDeg": [TUILE_LAT, TUILE_LON],
-        "regions": [anciennes[r["id"]] for r in cfg["regions"] if r["id"] in anciennes],
-    }
-    manifeste_chemin.write_text(json.dumps(manifeste, ensure_ascii=False, indent=1))
-    print(f"[manifeste] {manifeste_chemin} : {[r['id'] for r in manifeste['regions']]}")
+        exporter_region(region, aretes, mnt, parcs, bord_eau, bande_rapide, bande_itin, proj, empreintes)
+    if nom_mnt:
+        ecrire_manifeste(release, nom_mnt)
 
 
 if __name__ == "__main__":

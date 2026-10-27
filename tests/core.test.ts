@@ -10,6 +10,7 @@ import { voiesBoucle } from '../src/core/voies';
 import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
 import { Generateur } from '../src/core/generateur';
+import { mergeTiles, type TileDoc } from '../src/core/tiles';
 
 /**
  * Grille synthétique n × n de pas `pas` mètres autour de (45.9, 6.13), avec
@@ -103,6 +104,36 @@ describe('decodeGraph', () => {
     const g = grille(10, 100);
     const k = 3 * 10 + 7;
     expect(g.grid.nearest(g.x[k] + 20, g.y[k] - 30)).toBe(k);
+  });
+});
+
+describe('fusion des tuiles', () => {
+  // Tuile minimale : nœuds en absolu (1e-5 °) puis codés en écarts, une arête par paire.
+  const tuile = (nom: string, ids: number[], pts: [number, number][], paires: [number, number][]): TileDoc => {
+    const nodes: number[] = [];
+    let prev: [number, number] = [0, 0];
+    for (const p of pts) {
+      nodes.push(p[0] - prev[0], p[1] - prev[1]);
+      prev = p;
+    }
+    return {
+      v: 3, tile: nom, ids, nodes, nodeEle: pts.map(() => 0),
+      edges: { a: paires.map(([a]) => a), b: paires.map(([, b]) => b), len: paires.map(() => 1000), upAB: paires.map(() => 0), upBA: paires.map(() => 0), type: paires.map(() => 0) },
+      geom: paires.map(() => []),
+    };
+  };
+
+  it('recolle les nœuds partagés, garde distincts les nœuds propres au même endroit', () => {
+    const P = 4590000, Q = 613000;
+    // Nœud partagé 77 au bord des deux tuiles ; dans chaque tuile, un nœud
+    // propre au même point (un pont au-dessus d'une route) : jamais confondus.
+    const t1 = tuile('459_40', [0, 77, 0], [[P, Q], [P + 100, Q], [P + 50, Q + 50]], [[0, 1], [1, 2]]);
+    const t2 = tuile('459_41', [77, 0, 0], [[P + 100, Q], [P + 200, Q], [P + 50, Q + 50]], [[0, 1], [1, 2]]);
+    const g = mergeTiles([t1, t2], { zone: 'test', center: [45.9, 6.13], radiusKm: 1, reseau: '', mnt: '', noeuds: 0, aretes: 0 });
+    expect(g.n).toBe(5);
+    expect(g.m).toBe(4);
+    // Le nœud partagé relie les deux tuiles : deux arêtes de t1, une de t2.
+    expect(g.adjStart[2] - g.adjStart[1]).toBe(3);
   });
 });
 

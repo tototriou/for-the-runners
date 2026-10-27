@@ -9,7 +9,6 @@ import { rayonZoneM, ZoneGenerator } from './zone';
 
 /** Tuiles chargées pour la demande ; `neuf` : graphe construit (et non réutilisé). */
 export interface Chargement {
-  region: string;
   tuiles: number;
   ms: number;
   neuf: boolean;
@@ -28,15 +27,14 @@ export class Generateur {
     const rayon = req.zone ? rayonZoneM(req.lat, req.lon, req.zone) : undefined;
     const r = await this.store.graphFor(req.lat, req.lon, req.distanceKm, rayon);
     if (!r) {
-      const noms = this.store.manifest.regions.map((x) => x.name).join(', ');
       return {
         ok: false, loops: [], startNode: -1, stats: { candidates: 0, routes: 0, ms: 0 }, graph: null, chargement: null,
-        message: `Ce départ est hors des régions couvertes (${noms}).`,
+        message: 'Ce départ est hors de la zone couverte.',
       };
     }
     if (this.courant?.graph !== r.graph) this.courant = { graph: r.graph };
     const c = this.courant;
-    const chargement = { region: r.region.name, tuiles: r.tiles.length, ms: 0, neuf: r.neuf };
+    const chargement = { tuiles: r.tiles.length, ms: 0, neuf: r.neuf };
     let res: LoopResponse;
     if (req.zone) {
       c.zone ??= new ZoneGenerator(r.graph);

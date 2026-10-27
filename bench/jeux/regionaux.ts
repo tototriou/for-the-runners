@@ -190,16 +190,17 @@ function ecrireExemples(m: Mesure): string[] {
   return out;
 }
 
-function jeuRegional(id: string, region: string, titre: string, description: string, cas: () => Cas[], bloquantExact: boolean): Jeu {
+function jeuRegional(id: string, titre: string, description: string, cas: () => Cas[], bloquantExact: boolean): Jeu {
   return {
     id,
     parDefaut: true,
     async jouer(ctx: Contexte): Promise<ResultatJeu[]> {
-      if (!ctx.presentes.has(region)) {
-        console.log(`${titre} : région absente du manifeste, jeu ignoré`);
+      const demandes = cas();
+      if (!demandes.every((c) => ctx.couvert(c.lat, c.lon))) {
+        console.log(`${titre} : départs hors des données présentes, jeu ignoré`);
         return [];
       }
-      const m = await jouer(ctx, titre, description, cas(), bloquantExact);
+      const m = await jouer(ctx, titre, description, demandes, bloquantExact);
       const ok = m.criteres.every((c) => c.ok);
       return [{
         id, ok, section: section(m),
@@ -211,8 +212,8 @@ function jeuRegional(id: string, region: string, titre: string, description: str
 }
 
 export const JEUX_REGIONAUX: Jeu[] = [
-  jeuRegional('annecy', 'annecy', 'Annecy (jeu du cadrage)', '50 demandes : 5 départs × 10 distances de 5 à 30 km, D+ de 50 à 1 500 m. Seuil jugé depuis le point exact, comme au cadrage.', casDeTest, true),
-  jeuRegional('libre', 'annecy', 'Annecy, D+ libre', 'Les 50 demandes du cadrage sans D+ visé : seule la distance compte (±500 m, ou ±5 % au-delà de 10 km). Seuil jugé depuis le point exact.', () => casDeTest().map((c) => ({ ...c, dplusM: NaN })), true),
-  jeuRegional('alsace', 'alsace', 'Alsace', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l’app répond, départ décalé compris.', () => casRegionaux().filter((c) => c.region === 'Alsace'), false),
-  jeuRegional('idf', 'idf', 'Île-de-France', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l’app répond, départ décalé compris.', () => casRegionaux().filter((c) => c.region === 'Île-de-France'), false),
+  jeuRegional('annecy', 'Annecy (jeu du cadrage)', '50 demandes : 5 départs × 10 distances de 5 à 30 km, D+ de 50 à 1 500 m. Seuil jugé depuis le point exact, comme au cadrage.', casDeTest, true),
+  jeuRegional('libre', 'Annecy, D+ libre', 'Les 50 demandes du cadrage sans D+ visé : seule la distance compte (±500 m, ou ±5 % au-delà de 10 km). Seuil jugé depuis le point exact.', () => casDeTest().map((c) => ({ ...c, dplusM: NaN })), true),
+  jeuRegional('alsace', 'Alsace', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l’app répond, départ décalé compris.', () => casRegionaux().filter((c) => c.region === 'Alsace'), false),
+  jeuRegional('idf', 'Île-de-France', '30 demandes : 5 départs × 6 distances de 6 à 30 km ; pente dans la plage réaliste de chaque départ (bench/cases.ts). Seuil jugé comme l’app répond, départ décalé compris.', () => casRegionaux().filter((c) => c.region === 'Île-de-France'), false),
 ];

@@ -9,11 +9,12 @@ export const CIBLE_TEMPS_MS = 3_000;
 
 export interface Critere { nom: string; seuil: string; valeur: string; ok: boolean }
 
-/** Ce que chaque jeu reçoit : le même générateur que l'app, la graine, les régions présentes. */
+/** Ce que chaque jeu reçoit : le même générateur que l'app, la graine, la zone couverte. */
 export interface Contexte {
   gen: Generateur;
   seed: number;
-  presentes: Set<string>;
+  /** Le point est dans la zone couverte par les données. */
+  couvert: (lat: number, lon: number) => boolean;
   /** Écrire les fichiers d'exemple (GPX) ; faux avec --no-write. */
   ecrire: boolean;
 }

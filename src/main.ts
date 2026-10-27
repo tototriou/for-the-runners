@@ -6,11 +6,11 @@ import type { LoopRequest, LoopResponse } from './core/loops';
 import { TOL_DPLUS } from './core/regles';
 import { TRONCON_DEFAUT_M, TYPES_SEANCE, type Seance, type TypeSeance } from './core/seances';
 import type { Terrain } from './core/graph';
-import type { Manifest, RegionMeta } from './core/tiles';
+import { couvert, empriseCouverte, type Manifest } from './core/tiles';
 import type { BoucleAffichee, SegmentVoie } from './core/voies';
 import type { Zone } from './core/zone';
 
-type Reponse = Omit<LoopResponse, 'loops'> & { loops: BoucleAffichee[]; chargement?: { region: string; tuiles: number; ms: number } };
+type Reponse = Omit<LoopResponse, 'loops'> & { loops: BoucleAffichee[]; chargement?: { tuiles: number; ms: number } };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const app = $('app');
@@ -304,17 +304,14 @@ $('retour-boucles').addEventListener('click', () => { setVue('boucles'); selecti
 worker.onmessage = (ev: MessageEvent) => {
   const msg = ev.data;
   if (msg.type === 'loaded') {
-    regions = (msg.manifest as Manifest).regions;
-    for (const r of regions) {
-      const [x0, y0, x1, y1] = r.bbox;
-      L.rectangle([[y0, x0], [y1, x1]], { color: couleur('--gris'), weight: 1, fill: false, dashArray: '4 6', interactive: false }).addTo(map);
-      selectRegion.add(new Option(r.name, r.id));
-    }
-    choisirRegion(regions[0].id);
+    manifeste = msg.manifest as Manifest;
+    // Sans départ (ni lien, ni position), la carte montre la zone couverte.
+    const [x0, y0, x1, y1] = empriseCouverte(manifeste);
+    map.fitBounds([[y0, x0], [y1, x1]]);
     // Un lien ?depart= l'emporte ; sinon, la position du coureur.
     if (!departDepuisAdresse()) allerAMaPosition(false);
     $('credits').innerHTML =
-      `Réseau : ${regions[0].reseau}.<br>Altitude : ${regions[0].mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
+      `Réseau : ${manifeste.reseau}.<br>Altitude : ${manifeste.mnt}.<br>Fond : © contributeurs OpenStreetMap.`;
     go.disabled = false;
     setStatus('');
   } else if (msg.type === 'result') {
@@ -331,20 +328,13 @@ worker.onmessage = (ev: MessageEvent) => {
 const base = new URL(`${import.meta.env.BASE_URL}data/`, location.href).href;
 worker.postMessage({ type: 'load', base });
 
-let regions: RegionMeta[] = [];
-const selectRegion = $<HTMLSelectElement>('region');
-selectRegion.addEventListener('change', () => choisirRegion(selectRegion.value));
-
-const regionDe = (lat: number, lon: number) =>
-  regions.find(({ bbox: [x0, y0, x1, y1] }) => lon >= x0 && lon <= x1 && lat >= y0 && lat <= y1);
+let manifeste: Manifest | null = null;
 
 /** `?depart=lat,lon` : départ posé à l'ouverture (lien partagé). Vrai si appliqué. */
 function departDepuisAdresse(): boolean {
   const v = new URLSearchParams(location.search).get('depart');
   const [lat, lon] = (v ?? '').split(',').map(Number);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-  const r = regionDe(lat, lon);
-  if (r) selectRegion.value = r.id;
   map.setView([lat, lon], 14);
   placerDepart(L.latLng(lat, lon));
   return true;
@@ -352,7 +342,7 @@ function departDepuisAdresse(): boolean {
 
 /**
  * Départ à la position du coureur, si le navigateur la donne et qu'elle est
- * dans une région couverte ; sinon le départ par défaut reste. `demande` :
+ * dans la zone couverte ; sinon, le coureur touche la carte. `demande` :
  * clic sur « Ma position » (on signale alors un refus ou une erreur).
  */
 function allerAMaPosition(demande: boolean) {
@@ -364,13 +354,10 @@ function allerAMaPosition(demande: boolean) {
   navigator.geolocation.getCurrentPosition(
     ({ coords }) => {
       const { latitude: lat, longitude: lon } = coords;
-      const r = regionDe(lat, lon);
-      if (!r) {
-        const noms = regions.map((x) => x.name).join(', ');
-        setStatus(`Ta position est hors des régions couvertes (${noms}) : choisis un départ sur la carte.`, true);
+      if (!manifeste || !couvert(manifeste, lat, lon)) {
+        setStatus('Ta position est hors de la zone couverte : choisis un départ sur la carte.', true);
         return;
       }
-      selectRegion.value = r.id;
       map.setView([lat, lon], 14);
       placerDepart(L.latLng(lat, lon));
       setStatus('');
@@ -386,21 +373,14 @@ $<HTMLButtonElement>('ma-position').addEventListener('click', () => {
   allerAMaPosition(true);
 });
 
-function choisirRegion(id: string) {
-  const r = regions.find((x) => x.id === id);
-  if (!r) return;
-  selectRegion.value = id;
-  const [x0, y0, x1, y1] = r.bbox;
-  map.fitBounds([[y0, x0], [y1, x1]]);
-  placerDepart(L.latLng(r.center[0], r.center[1]));
-}
 setStatus('Chargement du réseau de chemins…');
 
 /* ---------- Calcul ---------- */
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (!depart || go.disabled) return;
+  if (go.disabled) return;
+  if (!depart) return setStatus('Touche la carte pour placer le départ.', true);
   const distanceKm = Number(distanceInput.value);
   if (!(distanceKm > 0)) return setStatus('Choisis une distance.', true);
   const dplusM = dplusVise() && dplusInput.value.trim() !== '' ? Number(dplusInput.value) : undefined;

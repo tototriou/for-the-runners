@@ -7,12 +7,12 @@ import { afficherCriteres, SEUIL_TEMPS_MS, tableauCriteres, type Contexte, type 
 export const JEU_ZONE: Jeu = {
   id: 'zone',
   parDefaut: true,
-  async jouer({ gen, seed: SEED, presentes }: Contexte) {
+  async jouer({ gen, seed: SEED, couvert }: Contexte) {
     const lignesZone: string[] = [];
     let reussis = 0;
     let horsAcces = 0;
     let tMax = 0;
-    const cas = CAS_ZONE_CIBLE.filter((c) => presentes.has(c.region));
+    const cas = CAS_ZONE_CIBLE.filter((c) => couvert(c.lat, c.lon));
     process.stdout.write('Zone + D+ visé : ');
     for (const c of cas) {
       const res = await gen.generate({ lat: c.lat, lon: c.lon, distanceKm: c.distanceKm, dplusM: c.dplusM, terrain: 'mixte', zone: c.zone, seed: SEED });

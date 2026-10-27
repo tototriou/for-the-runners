@@ -163,9 +163,6 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 form { display: flex; flex-direction: column; gap: 18px; }
 .bloc { display: flex; flex-direction: column; gap: 8px; }
 .etiquette { font-size: 12px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--gris); }
-.etiquette-ligne { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.region { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gris); }
-.region select { height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--contour); background: var(--fond); }
 .aide { margin: 0; font-size: 13px; line-height: 1.4; color: var(--gris); }
 .rangee { display: flex; gap: 10px; }
 

@@ -17,6 +17,7 @@ import { JEUX_REGIONAUX } from './jeux/regionaux';
 import { JEU_SEANCES } from './jeux/seances';
 import { JEU_ZONE } from './jeux/zone';
 import { Generateur } from '../src/core/generateur';
+import { couvert } from '../src/core/tiles';
 import { chargerStore } from './load';
 
 /** Ordre des jeux, qui est aussi celui des sections du rapport ; le D+ visé, fonction centrale, d'abord. */
@@ -36,7 +37,8 @@ if (jeuDemande && !JEUX.some((j) => j.id === jeuDemande)) {
 const SEED = Number(process.env.SEED ?? 12345);
 
 const gen = new Generateur(chargerStore());
-const ctx: Contexte = { gen, seed: SEED, presentes: new Set(gen.store.manifest.regions.map((r) => r.id)), ecrire };
+const manifeste = gen.store.manifest;
+const ctx: Contexte = { gen, seed: SEED, couvert: (lat, lon) => couvert(manifeste, lat, lon), ecrire };
 
 const resultats: ResultatJeu[] = [];
 for (const jeu of JEUX) {
@@ -46,14 +48,10 @@ for (const jeu of JEUX) {
 const toutOk = resultats.every((r) => r.ok);
 
 // ----------------------------------------------------------------- rapport
-const regions = gen.store.manifest.regions
-  .map((r) => `| ${r.name} | ${Object.keys(r.tiles).length} | ${r.km.toLocaleString('fr-FR')} km | ${(r.octets / 1e6).toFixed(1)} Mo |`)
-  .join('\n');
-
 const rapport = `# Résultats du banc de tests
 
-Généré par \`npm run bench\` (Node ${process.version}). Réseau : ${gen.store.manifest.regions[0]?.reseau}.
-Altitude : ${gen.store.manifest.regions[0]?.mnt}.
+Généré par \`npm run bench\` (Node ${process.version}). Réseau : ${manifeste.reseau}.
+Altitude : ${manifeste.mnt}.
 
 ## Verdict : ${toutOk ? '✅ tous les critères automatiques sont atteints' : '❌ au moins un critère échoue'}
 
@@ -61,9 +59,7 @@ ${resultats.map((r) => `- ${r.verdict}`).join('\n')}
 
 Reste à vérifier hors banc : le D+ réel sur 3 sorties (montre) et le temps sur téléphone.
 
-| Région | Tuiles | Réseau | Données |
-| --- | --- | --- | --- |
-${regions}
+Données : ${Object.keys(manifeste.tuiles).length} tuiles, ${(manifeste.octets / 1e6).toFixed(1)} Mo.
 
 ${resultats.map((r) => r.section).join('\n\n')}
 

@@ -7,16 +7,18 @@ backend ni clé d'API.
 
 **En ligne : https://tototriou.github.io/for-the-runners/**
 
-Régions couvertes : **Annecy**, **Alsace** et **Île-de-France** (rectangles
-englobants, débordant un peu sur les régions voisines). Résultats du banc de tests :
+Zones couvertes pour l'instant : **Annecy**, **Alsace** et **Île-de-France**
+(rectangles englobants, débordant un peu au-delà) ; toute la France
+métropolitaine et la Corse sont en préparation
+([conception](docs/conception/france.md)). Résultats du banc de tests :
 [RESULTATS.md](RESULTATS.md). Limites et suites : [NOTE.md](NOTE.md).
 
 ## Utilisation
 
-1. À l'ouverture, si le navigateur donne ta position et qu'elle est dans une
-   région couverte, le départ y est placé (bouton « Ma position » pour y
-   revenir). Sinon, choisis la région, puis touche la carte pour placer le
-   départ.
+1. À l'ouverture, si le navigateur donne ta position et qu'elle est dans la
+   zone couverte, le départ y est placé (bouton « Ma position » pour y
+   revenir). Sinon, la carte montre la zone couverte : touche-la pour placer
+   le départ.
 2. Règle la distance (− / +, ou 5, 8, 10, 15, 21,1 km), le D+ (« Libre » ou
    « Visé ») et le type de séance ; terrain et zone sont sous « Terrain et
    zone ». En D+ libre, l'app propose des boucles de la distance demandée,
@@ -130,9 +132,10 @@ atteint.
 
 ## Préparer les données
 
-Les données sont versionnées dans `public/data/` : un manifeste
-(`manifest.json`) et, par région, des tuiles JSON gzip de 0,1° × 0,15°
-(environ 11 × 12 km). L'app ne charge que les tuiles autour du départ,
+Les données sont versionnées dans `public/data/` : un manifeste national
+(`manifest.json` : tuiles présentes, sources) et des tuiles JSON gzip de
+0,1° × 0,15° (environ 11 × 12 km) dans `tuiles/`, sans notion de région :
+une boucle passe d'une tuile à l'autre partout. L'app ne charge que les tuiles autour du départ,
 dans un rayon de 0,33 × distance + 1,5 km. Pour régénérer :
 
 ```bash
@@ -169,15 +172,21 @@ Le script :
    extraits régionaux d'openstreetmap.fr, champ `osm` des régions, à 15 m
    près) et une géométrie simplifiée ;
 5. range chaque arête dans la tuile de son premier nœud et écrit les tuiles
-   en JSON compressé. Les nœuds portent un identifiant unique dans la
-   région : le navigateur recolle les tuiles sans créer de fausse jonction
-   (un pont au-dessus d'une route).
+   en JSON compressé (format 3). Un nœud partagé entre deux tuiles porte un
+   identifiant national (empreinte de 53 bits de son connecteur Overture,
+   collisions vérifiées) ; les autres portent 0. Le navigateur recolle les
+   seuls nœuds partagés, sans créer de fausse jonction (un pont au-dessus
+   d'une route) ;
+6. écrit le manifeste à partir des tuiles présentes : une région repréparée
+   remplace ses tuiles sans toucher aux autres.
 
 Les téléchargements sont mis en cache dans `.cache/` (non versionné).
 
-## Ajouter une région
+## Ajouter une zone
 
-Ajouter une entrée à `config/regions.json` (boîte englobante
+En attendant la préparation nationale par blocs, ajouter une entrée à
+`config/regions.json` (boîte englobante, qui ne doit pas recouper celle
+d'une autre entrée,
 `[lonMin, latMin, lonMax, latMax]`) :
 
 ```json

@@ -1,37 +1,28 @@
 // Données découpées en tuiles (écrites par scripts/prepare_data.py) :
 // choix des tuiles utiles à une demande, chargement avec cache, fusion en
-// un seul graphe.
+// un seul graphe. Une seule couverture nationale, sans régions : une boucle
+// passe d'une tuile à l'autre partout.
 
 import { CLS_INCONNUE, decodeGraph, type Graph, type ZoneDoc } from './graph';
-
-export interface RegionMeta {
-  id: string;
-  name: string;
-  /** [lonMin, latMin, lonMax, latMax] */
-  bbox: [number, number, number, number];
-  center: [number, number];
-  reseau: string;
-  mnt: string;
-  aretes: number;
-  noeuds: number;
-  km: number;
-  octets: number;
-  /** Nom de tuile → taille en octets. */
-  tiles: Record<string, number>;
-}
 
 export interface Manifest {
   v: number;
   /** Taille d'une tuile : [degrés de latitude, degrés de longitude]. */
   tileDeg: [number, number];
-  regions: RegionMeta[];
+  reseau: string;
+  mnt: string;
+  octets: number;
+  /** Nom de tuile (« ligne_colonne » de la grille) → taille en octets. */
+  tuiles: Record<string, number>;
 }
 
 export interface TileDoc {
   v: number;
-  region: string;
   tile: string;
-  /** Identifiant de chaque nœud, unique dans la région. */
+  /**
+   * Identifiant national de chaque nœud partagé avec une autre tuile
+   * (recollé à la fusion) ; 0 pour un nœud propre à la tuile.
+   */
   ids: number[];
   nodes: number[];
   nodeEle: number[];
@@ -39,12 +30,23 @@ export interface TileDoc {
   geom: number[][];
 }
 
-export function regionAt(m: Manifest, lat: number, lon: number): RegionMeta | null {
-  for (const r of m.regions) {
-    const [x0, y0, x1, y1] = r.bbox;
-    if (lon >= x0 && lon <= x1 && lat >= y0 && lat <= y1) return r;
-  }
-  return null;
+/** Nom de la tuile qui contient le point. */
+export function tuileDe(m: Manifest, lat: number, lon: number): string {
+  return `${Math.floor(lat / m.tileDeg[0])}_${Math.floor(lon / m.tileDeg[1])}`;
+}
+
+/** Le point est dans la zone couverte : sa tuile existe. */
+export function couvert(m: Manifest, lat: number, lon: number): boolean {
+  return tuileDe(m, lat, lon) in m.tuiles;
+}
+
+/** Emprise couverte [lonMin, latMin, lonMax, latMax], d'après les tuiles présentes. */
+export function empriseCouverte(m: Manifest): [number, number, number, number] {
+  const noms = Object.keys(m.tuiles);
+  const ty = noms.map((t) => Number(t.split('_')[0]));
+  const tx = noms.map((t) => Number(t.split('_')[1]));
+  const [dLat, dLon] = m.tileDeg;
+  return [Math.min(...tx) * dLon, Math.min(...ty) * dLat, (Math.max(...tx) + 1) * dLon, (Math.max(...ty) + 1) * dLat];
 }
 
 /**
@@ -57,8 +59,8 @@ export function rayonUtileM(distanceKm: number): number {
   return distanceKm * 1000 * 0.33 + 1500;
 }
 
-/** Tuiles de la région qui recoupent le carré de demi-côté `rayonM` autour du point. */
-export function tilesAround(m: Manifest, r: RegionMeta, lat: number, lon: number, rayonM: number): string[] {
+/** Tuiles présentes qui recoupent le carré de demi-côté `rayonM` autour du point. */
+export function tilesAround(m: Manifest, lat: number, lon: number, rayonM: number): string[] {
   const [dLat, dLon] = m.tileDeg;
   const rLat = rayonM / 111200;
   const rLon = rayonM / (111320 * Math.cos((lat * Math.PI) / 180));
@@ -66,7 +68,7 @@ export function tilesAround(m: Manifest, r: RegionMeta, lat: number, lon: number
   for (let ty = Math.floor((lat - rLat) / dLat); ty <= Math.floor((lat + rLat) / dLat); ty++) {
     for (let tx = Math.floor((lon - rLon) / dLon); tx <= Math.floor((lon + rLon) / dLon); tx++) {
       const nom = `${ty}_${tx}`;
-      if (nom in r.tiles) out.push(nom);
+      if (nom in m.tuiles) out.push(nom);
     }
   }
   return out;
@@ -89,7 +91,7 @@ export function empriseTuiles(m: Manifest, tiles: string[]): { center: [number, 
   return { center, radiusKm: Math.hypot((lo1 - lo0) * kx, (la1 - la0) * 111.2) / 2 };
 }
 
-/** Fusionne des tuiles d'une même région en un graphe (nœuds recollés par identifiant). */
+/** Fusionne des tuiles en un graphe : les nœuds partagés sont recollés par identifiant, les autres gardés tels quels. */
 export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
   const index = new Map<number, number>();
   const nodes: number[] = [];
@@ -106,10 +108,11 @@ export function mergeTiles(tiles: TileDoc[], meta: ZoneDoc['meta']): Graph {
     for (let i = 0; i < t.ids.length; i++) {
       la += t.nodes[2 * i];
       lo += t.nodes[2 * i + 1];
-      let g = index.get(t.ids[i]);
+      const id = t.ids[i];
+      let g = id ? index.get(id) : undefined;
       if (g === undefined) {
         g = nodeEle.length;
-        index.set(t.ids[i], g);
+        if (id) index.set(id, g);
         nodes.push(la - prevLa, lo - prevLo);
         prevLa = la;
         prevLo = lo;
@@ -146,39 +149,35 @@ export class TileStore {
 
   constructor(
     readonly manifest: Manifest,
-    private charger: (regionId: string, tile: string) => Promise<TileDoc>,
+    private charger: (tile: string) => Promise<TileDoc>,
   ) {}
 
-  private tuile(regionId: string, tile: string) {
-    const cle = `${regionId}/${tile}`;
-    let p = this.cache.get(cle);
+  private tuile(tile: string) {
+    let p = this.cache.get(tile);
     if (!p) {
-      p = this.charger(regionId, tile);
-      this.cache.set(cle, p);
-      p.catch(() => this.cache.delete(cle));
+      p = this.charger(tile);
+      this.cache.set(tile, p);
+      p.catch(() => this.cache.delete(tile));
     }
     return p;
   }
 
   /**
    * Graphe couvrant le départ pour une boucle de `distanceKm` (ou le rayon
-   * `rayonM` donné, pour une zone), ou null si
-   * le point est hors des régions couvertes. Réutilise le graphe précédent
-   * s'il couvre déjà les mêmes tuiles.
+   * `rayonM` donné, pour une zone), ou null si le point est hors de la zone
+   * couverte. Réutilise le graphe précédent s'il couvre déjà les mêmes tuiles.
    */
-  async graphFor(lat: number, lon: number, distanceKm: number, rayonM = rayonUtileM(distanceKm)): Promise<{ graph: Graph; region: RegionMeta; tiles: string[]; neuf: boolean } | null> {
-    const region = regionAt(this.manifest, lat, lon);
-    if (!region) return null;
-    const tiles = tilesAround(this.manifest, region, lat, lon, rayonM);
-    if (tiles.length === 0) return null;
-    const cle = `${region.id}|${tiles.join(',')}`;
-    if (this.dernier?.cle === cle) return { graph: this.dernier.graph, region, tiles, neuf: false };
-    const docs = await Promise.all(tiles.map((t) => this.tuile(region.id, t)));
+  async graphFor(lat: number, lon: number, distanceKm: number, rayonM = rayonUtileM(distanceKm)): Promise<{ graph: Graph; tiles: string[]; neuf: boolean } | null> {
+    if (!couvert(this.manifest, lat, lon)) return null;
+    const tiles = tilesAround(this.manifest, lat, lon, rayonM);
+    const cle = tiles.join(',');
+    if (this.dernier?.cle === cle) return { graph: this.dernier.graph, tiles, neuf: false };
+    const docs = await Promise.all(tiles.map((t) => this.tuile(t)));
     const graph = mergeTiles(docs, {
-      zone: region.name, ...empriseTuiles(this.manifest, tiles),
-      reseau: region.reseau, mnt: region.mnt, noeuds: 0, aretes: 0,
+      zone: 'France', ...empriseTuiles(this.manifest, tiles),
+      reseau: this.manifest.reseau, mnt: this.manifest.mnt, noeuds: 0, aretes: 0,
     });
     this.dernier = { cle, graph };
-    return { graph, region, tiles, neuf: true };
+    return { graph, tiles, neuf: true };
   }
 }
