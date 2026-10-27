@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { TileStore, type Manifest, type TileDoc } from '../src/core/tiles';
+import { decoderTuile, TileStore, type Manifest } from '../src/core/tiles';
 
 export const DATA = fileURLToPath(new URL('../public/data/', import.meta.url));
 
@@ -9,6 +9,6 @@ export const DATA = fileURLToPath(new URL('../public/data/', import.meta.url));
 export function chargerStore(dossier = DATA): TileStore {
   const manifest = JSON.parse(readFileSync(`${dossier}manifest.json`, 'utf8')) as Manifest;
   return new TileStore(manifest, async (tile) =>
-    JSON.parse(gunzipSync(readFileSync(`${dossier}tuiles/${tile}.json.gz`)).toString('utf8')) as TileDoc,
+    decoderTuile(tile, gunzipSync(readFileSync(`${dossier}tuiles/${tile}.bin.gz`))),
   );
 }

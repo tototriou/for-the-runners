@@ -10,7 +10,7 @@ import { voiesBoucle } from '../src/core/voies';
 import { ZoneGenerator } from '../src/core/zone';
 import { chargerStore } from '../bench/load';
 import { Generateur } from '../src/core/generateur';
-import { mergeTiles, type TileDoc } from '../src/core/tiles';
+import { decoderTuile, mergeTiles, type TileDoc } from '../src/core/tiles';
 
 /**
  * Grille synthétique n × n de pas `pas` mètres autour de (45.9, 6.13), avec
@@ -122,6 +122,34 @@ describe('fusion des tuiles', () => {
       geom: paires.map(() => []),
     };
   };
+
+  it('décode le format 3, identifiant de 53 bits compris', () => {
+    // Encodage écrit ici à la main d'après la description du format
+    // (encoder_tuile, scripts/prepare_data.py), indépendamment du décodeur.
+    const octets: number[] = [];
+    const u = (z: number) => {
+      while (z >= 128) {
+        octets.push((z % 128) | 128);
+        z = Math.floor(z / 128);
+      }
+      octets.push(z);
+    };
+    const s = (x: number) => u(x >= 0 ? 2 * x : -2 * x - 1);
+    const grand = 2 ** 53 - 1;
+    [3, 2, 1, grand, 0].forEach(u); // version, n, m, ids
+    [4590000, 613000, 10, -20].forEach(s); // nœuds : écarts lat, lon
+    [450, -12].forEach(s); // altitudes : 450 puis 438
+    [0, 1].forEach(s); // a, b - a
+    [1234, 56, 7, 1, 12, 0, 100, 0, 0].forEach(s); // len … itin
+    u(1); // un point intermédiaire
+    [5, -5, 3].forEach(s); // écarts lat, lon, altitude (450 + 3)
+    const t = decoderTuile('459_40', Uint8Array.from(octets));
+    expect(t.ids).toEqual([grand, 0]);
+    expect(t.nodes).toEqual([4590000, 613000, 10, -20]);
+    expect(t.nodeEle).toEqual([450, 438]);
+    expect(t.edges).toEqual({ a: [0], b: [1], len: [1234], upAB: [56], upBA: [7], type: [1], cls: [12], parc: [0], eau: [100], rapide: [0], itin: [0] });
+    expect(t.geom).toEqual([[5, -5, 453]]);
+  });
 
   it('recolle les nœuds partagés, garde distincts les nœuds propres au même endroit', () => {
     const P = 4590000, Q = 613000;

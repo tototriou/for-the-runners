@@ -133,9 +133,10 @@ atteint.
 ## Préparer les données
 
 Les données sont versionnées dans `public/data/` : un manifeste national
-(`manifest.json` : tuiles présentes, sources) et des tuiles JSON gzip de
-0,1° × 0,15° (environ 11 × 12 km) dans `tuiles/`, sans notion de région :
-une boucle passe d'une tuile à l'autre partout. L'app ne charge que les tuiles autour du départ,
+(`manifest.json` : tuiles présentes, sources) et des tuiles binaires gzip
+de 0,1° × 0,15° (environ 11 × 12 km) dans `tuiles/`, sans notion de
+région : une boucle passe d'une tuile à l'autre partout. Pour en lire une :
+`npx tsx scripts/lire-tuile.ts public/data/tuiles/<nom>.bin.gz [--resume]`. L'app ne charge que les tuiles autour du départ,
 dans un rayon de 0,33 × distance + 1,5 km. Pour régénérer :
 
 ```bash
@@ -172,7 +173,9 @@ Le script :
    extraits régionaux d'openstreetmap.fr, champ `osm` des régions, à 15 m
    près) et une géométrie simplifiée ;
 5. range chaque arête dans la tuile de son premier nœud et écrit les tuiles
-   en JSON compressé (format 3). Un nœud partagé entre deux tuiles porte un
+   au format 3 : entiers en varint, presque tous en écart au précédent, puis
+   gzip (un tiers de moins que le même contenu en JSON ; format décrit dans
+   `encoder_tuile`). Un nœud partagé entre deux tuiles porte un
    identifiant national (empreinte de 53 bits de son connecteur Overture,
    collisions vérifiées) ; les autres portent 0. Le navigateur recolle les
    seuls nœuds partagés, sans créer de fausse jonction (un pont au-dessus

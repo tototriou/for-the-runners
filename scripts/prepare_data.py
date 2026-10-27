@@ -210,6 +210,69 @@ def tuile_dans_boite(nom, bbox):
             and ty * TUILE_LAT <= bbox[3] and (ty + 1) * TUILE_LAT >= bbox[1])
 
 
+def encoder_tuile(ids, noeuds, ele, colonnes, geom):
+    """Tuile au format 3, lue par decoderTuile (src/core/tiles.ts) : à changer
+    des deux côtés. Une suite d'entiers en varint (7 bits par octet, poids
+    faible d'abord), signés en zigzag sauf les identifiants (jusqu'à 2^53) :
+
+      version (3), n nœuds, m arêtes
+      ids[n]          empreinte du nœud partagé, ou 0 (non signés)
+      noeuds[2n]      écarts lat, lon (1e-5 °) au nœud précédent
+      ele[n]          écart d'altitude (m) au nœud précédent
+      a[m]            écart au nœud a de l'arête précédente
+      b[m]            écart au nœud a de l'arête
+      len, upAB, upBA (dm), type, cls, parc, eau, rapide, itin (%) : m chacun
+      nGeom[m]        points intermédiaires de chaque arête
+      geom            par point : écarts lat, lon au point précédent (le
+                      premier : au nœud a), écart d'altitude au point
+                      précédent (le premier : au nœud a)
+
+    Les écarts rendent les nombres petits, d'où un ou deux octets par
+    valeur : 28 % de moins que le même contenu en JSON, gzip compris
+    (mesuré sur les tuiles d'Alsace)."""
+    out = bytearray()
+
+    def u(z):
+        while z >= 0x80:
+            out.append((z & 0x7F) | 0x80)
+            z >>= 7
+        out.append(z)
+
+    def s(x):
+        u(2 * x if x >= 0 else -2 * x - 1)
+
+    A, B = colonnes[0], colonnes[1]
+    for v in (3, len(ids), len(A)):
+        u(v)
+    for v in ids:
+        u(v)
+    for v in noeuds:
+        s(v)
+    prev = 0
+    for z in ele:
+        s(z - prev)
+        prev = z
+    prev = 0
+    for a in A:
+        s(a - prev)
+        prev = a
+    for a, b in zip(A, B):
+        s(b - a)
+    for col in colonnes[2:]:
+        for v in col:
+            s(v)
+    for g in geom:
+        u(len(g) // 3)
+    for e, g in enumerate(geom):
+        prev = ele[A[e]]
+        for k in range(0, len(g), 3):
+            s(g[k])
+            s(g[k + 1])
+            s(g[k + 2] - prev)
+            prev = g[k + 2]
+    return bytes(out)
+
+
 def empreinte(connecteur):
     """Identifiant national d'un nœud partagé entre tuiles : 53 bits (entier
     exact en JavaScript) de l'empreinte de son connecteur Overture, jamais 0,
@@ -983,7 +1046,7 @@ def exporter_region(region, aretes, mnt, parcs, bord_eau, bande_rapide, bande_it
     dossier = DATA / "tuiles"
     dossier.mkdir(parents=True, exist_ok=True)
     # Une région repréparée remplace ses tuiles, y compris celles qui ont disparu.
-    for vieux in dossier.glob("*.json.gz"):
+    for vieux in dossier.glob("*.gz"):
         if tuile_dans_boite(vieux.name.split(".")[0], region["bbox"]):
             vieux.unlink()
     tuiles, total_km, total_octets = {}, 0.0, 0
@@ -1021,16 +1084,10 @@ def exporter_region(region, aretes, mnt, parcs, bord_eau, bande_rapide, bande_it
                 prev = cur
             G.append(flat)
             total_km += lg / 1000
-        doc = {
-            "v": 3, "tile": nom,
-            "ids": [partages.get(n, 0) for n in ids_loc],
-            "nodes": flat_noeuds,
-            "nodeEle": [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc],
-            "edges": {"a": A, "b": B, "len": L, "upAB": UP_AB, "upBA": UP_BA, "type": T, "cls": CL, "parc": PA, "eau": EA, "rapide": RA, "itin": IT},
-            "geom": G,
-        }
-        brut = json.dumps(doc, separators=(",", ":")).encode()
-        chemin = dossier / f"{nom}.json.gz"
+        ele = [0 if np.isnan(z_noeud[n]) else int(round(z_noeud[n])) for n in ids_loc]
+        brut = encoder_tuile([partages.get(n, 0) for n in ids_loc], flat_noeuds, ele,
+                             [A, B, L, UP_AB, UP_BA, T, CL, PA, EA, RA, IT], G)
+        chemin = dossier / f"{nom}.bin.gz"
         chemin.write_bytes(gzip.compress(brut, 9, mtime=0))
         tuiles[nom] = chemin.stat().st_size
         total_octets += tuiles[nom]
@@ -1042,7 +1099,7 @@ def exporter_region(region, aretes, mnt, parcs, bord_eau, bande_rapide, bande_it
 def ecrire_manifeste(release, nom_mnt):
     """Manifeste national : les tuiles présentes dans DATA/tuiles, quelle que
     soit l'exécution qui les a écrites, et les sources des données."""
-    tuiles = {f.name.split(".")[0]: f.stat().st_size for f in sorted((DATA / "tuiles").glob("*.json.gz"))}
+    tuiles = {f.name.split(".")[0]: f.stat().st_size for f in sorted((DATA / "tuiles").glob("*.gz"))}
     manifeste = {
         "v": 3, "tileDeg": [TUILE_LAT, TUILE_LON],
         "reseau": f"Overture Maps {release} (transportation, données © OpenStreetMap, ODbL)",

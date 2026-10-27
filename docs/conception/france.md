@@ -48,6 +48,13 @@ qu'aujourd'hui (banc à l'appui).
   partagés : moins d'une chance sur un milliard. La préparation le vérifie
   tuile par tuile et s'arrête si cela arrive. Le format change (version 3 des tuiles) ;
   l'app lit la version 3 seulement, les trois zones étant repréparées.
+- **Format binaire** (décidé en cours d'étape 1, pour tenir la limite de
+  1 Go avec de la marge) : entiers en varint, presque tous en écart au
+  précédent, puis gzip. Sans perte, vérifié par aller-retour sur les tuiles
+  d'Annecy. Mesuré : −33 % sur Annecy par rapport au même contenu en JSON,
+  −28 % sur l'Alsace ; avec les identifiants allégés, environ −35 % par
+  rapport aux tuiles actuelles. France estimée à 0,4 à 0,6 Go au lieu de
+  0,6 à 0,9.
 - **Périmètre** : les tuiles qui touchent la France (frontière Overture,
   couche « divisions »), plus une tuile de marge. Côté étranger (Genève,
   Kehl, Bâle…), le réseau est gardé et l'altitude vient du SRTM, comme

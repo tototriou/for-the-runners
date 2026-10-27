@@ -30,6 +30,63 @@ export interface TileDoc {
   geom: number[][];
 }
 
+/**
+ * Tuile au format 3, écrite par encoder_tuile (scripts/prepare_data.py, où
+ * le format est décrit) : à changer des deux côtés. Entiers en varint,
+ * signés en zigzag sauf les identifiants (jusqu'à 2^53, d'où l'arithmétique
+ * en nombres et non en opérations binaires sur 32 bits).
+ */
+export function decoderTuile(tile: string, o: Uint8Array): TileDoc {
+  let i = 0;
+  const u = () => {
+    let v = 0;
+    let f = 1;
+    let b: number;
+    do {
+      b = o[i++];
+      v += (b & 0x7f) * f;
+      f *= 128;
+    } while (b & 0x80);
+    return v;
+  };
+  const s = () => {
+    const z = u();
+    return z % 2 ? -(z + 1) / 2 : z / 2;
+  };
+  const suite = (k: number, lire: () => number) => {
+    const t = new Array<number>(k);
+    for (let j = 0; j < k; j++) t[j] = lire();
+    return t;
+  };
+  const cumul = (t: number[]) => {
+    for (let j = 1; j < t.length; j++) t[j] += t[j - 1];
+    return t;
+  };
+  const v = u();
+  if (v !== 3) throw new Error(`Tuile ${tile} : format ${v} inconnu.`);
+  const n = u();
+  const m = u();
+  const ids = suite(n, u);
+  const nodes = suite(2 * n, s);
+  const nodeEle = cumul(suite(n, s));
+  const a = cumul(suite(m, s));
+  const b = suite(m, s).map((d, e) => a[e] + d);
+  const [len, upAB, upBA, type, cls, parc, eau, rapide, itin] = Array.from({ length: 9 }, () => suite(m, s));
+  const nGeom = suite(m, u);
+  const geom = nGeom.map((k, e) => {
+    const g = new Array<number>(3 * k);
+    let z = nodeEle[a[e]];
+    for (let p = 0; p < 3 * k; p += 3) {
+      g[p] = s();
+      g[p + 1] = s();
+      z += s();
+      g[p + 2] = z;
+    }
+    return g;
+  });
+  return { v, tile, ids, nodes, nodeEle, edges: { a, b, len, upAB, upBA, type, cls, parc, eau, rapide, itin }, geom };
+}
+
 /** Nom de la tuile qui contient le point. */
 export function tuileDe(m: Manifest, lat: number, lon: number): string {
   return `${Math.floor(lat / m.tileDeg[0])}_${Math.floor(lon / m.tileDeg[1])}`;

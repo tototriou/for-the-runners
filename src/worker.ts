@@ -3,13 +3,13 @@
 
 import { Generateur } from './core/generateur';
 import type { LoopRequest } from './core/loops';
-import { TileStore, type Manifest, type TileDoc } from './core/tiles';
+import { decoderTuile, TileStore, type Manifest } from './core/tiles';
 import { voiesBoucle } from './core/voies';
 
 let base = '';
 let gen: Generateur | null = null;
 
-async function lireJson<T>(url: string): Promise<T> {
+async function lire(url: string): Promise<Response> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Chargement impossible : ${url} (${res.status})`);
   // GitHub Pages sert les .gz tels quels ; un autre serveur peut les avoir
@@ -19,7 +19,7 @@ async function lireJson<T>(url: string): Promise<T> {
   const flux = o[0] === 0x1f && o[1] === 0x8b
     ? new Blob([brut]).stream().pipeThrough(new DecompressionStream('gzip'))
     : new Blob([brut]).stream();
-  return (await new Response(flux).json()) as T;
+  return new Response(flux);
 }
 
 async function generer(req: LoopRequest) {
@@ -37,8 +37,9 @@ self.onmessage = async (ev: MessageEvent) => {
   try {
     if (msg.type === 'load') {
       base = msg.base;
-      const manifest = await lireJson<Manifest>(`${base}manifest.json`);
-      gen = new Generateur(new TileStore(manifest, (tile) => lireJson<TileDoc>(`${base}tuiles/${tile}.json.gz`)));
+      const manifest = (await (await lire(`${base}manifest.json`)).json()) as Manifest;
+      gen = new Generateur(new TileStore(manifest, async (tile) =>
+        decoderTuile(tile, new Uint8Array(await (await lire(`${base}tuiles/${tile}.bin.gz`)).arrayBuffer()))));
       self.postMessage({ type: 'loaded', manifest });
     } else if (msg.type === 'generate') {
       const res = await generer(msg.req);

@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": false
   },
-  "include": ["src", "bench", "tests", "vite.config.ts"]
+  "include": ["src", "bench", "tests", "scripts", "vite.config.ts"]
 }
