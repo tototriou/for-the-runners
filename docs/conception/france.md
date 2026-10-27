@@ -1,6 +1,7 @@
 # Conception : couvrir toute la France
 
-Statut : **proposition, à valider avant tout code.**
+Statut : **validée.** Hébergement sur une branche `donnees` de GitHub ;
+périmètre : métropole et Corse (outre-mer plus tard).
 
 ## 1. Pourquoi
 
@@ -162,8 +163,8 @@ nationale.
   tuile binaire (gain estimé ×2, conçu à part).
 - **Temps de préparation** : inconnu tant que le pilote n'est pas mesuré.
 
-## 7. Décisions à prendre
+## 7. Décisions
 
-1. Hébergement : branche `donnees` sur GitHub (recommandé) ou R2 tout de
-   suite ?
-2. Périmètre : métropole et Corse, les départements d'outre-mer plus tard ?
+1. Hébergement : branche `donnees` sur GitHub ; R2 seulement si le pilote
+   ou le trafic l'imposent.
+2. Périmètre : métropole et Corse ; outre-mer plus tard.
