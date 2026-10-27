@@ -307,7 +307,7 @@ worker.onmessage = (ev: MessageEvent) => {
     manifeste = msg.manifest as Manifest;
     // Sans départ (ni lien, ni position), la carte montre la zone couverte.
     const [x0, y0, x1, y1] = empriseCouverte(manifeste);
-    map.fitBounds([[y0, x0], [y1, x1]]);
+    map.fitBounds([[y0, x0], [y1, x1]], marges());
     // Un lien ?depart= l'emporte ; sinon, la position du coureur.
     if (!departDepuisAdresse()) allerAMaPosition(false);
     $('credits').innerHTML =
@@ -530,13 +530,18 @@ function afficher(res: Reponse) {
 }
 
 /** Cadre la carte sur les boucles, sans les cacher sous le panneau du téléphone. */
+/** Marges d'un cadrage : la barre du haut et, sur téléphone, le panneau qui recouvre le bas de la carte. */
+function marges(): L.FitBoundsOptions {
+  const bas = ordinateur.matches ? 20
+    : (app.dataset.vue === 'boucles' ? panel.offsetHeight : hauteurEtat((panel.dataset.etat as Etat) ?? 'moyen')) + 16;
+  return { paddingTopLeft: [20, 72], paddingBottomRight: [20, bas] };
+}
+
 function cadrer(seule = false) {
   if (!lignes.length) return;
   const cadre = L.featureGroup(seule ? [lignes[choisie]] : lignes);
   if (depart) L.marker(depart).addTo(cadre);
-  const bas = ordinateur.matches ? 20
-    : (app.dataset.vue === 'boucles' ? panel.offsetHeight : hauteurEtat((panel.dataset.etat as Etat) ?? 'moyen')) + 16;
-  map.fitBounds(cadre.getBounds(), { paddingTopLeft: [20, 72], paddingBottomRight: [20, bas] });
+  map.fitBounds(cadre.getBounds(), marges());
 }
 
 function selectionner(i: number) {
